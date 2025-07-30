@@ -1,5 +1,5 @@
-import { ChatService } from "@token-ring/chat";
 import { ModelRegistry } from "@token-ring/ai-client";
+import { ChatService } from "@token-ring/chat";
 import { z } from "zod";
 
 /**
