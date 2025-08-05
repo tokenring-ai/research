@@ -44,16 +44,14 @@ export async function execute({ topic, prompt }, registry) {
 		);
 
 		chatService.systemLine(
-			`[Research] Successfully generated research for "${topic}". Research: \n${research}\n"`,
+			`[Research] Successfully generated research for "${topic}"`,
 		);
+		chatService.out(`Research: \n${research}"`);
 
 		// Crop token cost to 4 decimal places if present
 		if (response.usage) {
 			const { promptTokens, completionTokens, cost } = response.usage;
 
-			chatService.systemLine(
-				`[Research] Successfully generated research for "${topic}". Research: \n${research}\n"`,
-			);
 			chatService.systemLine(
 				`[Research] Token usage - promptTokens: ${promptTokens}, completionTokens: ${completionTokens}, cost: ${cost}`,
 			);
