@@ -31,8 +31,8 @@ export async function execute({ topic, prompt }, registry) {
 					{
 						role: "system",
 						content:
-							"You are a research assistant, tasked with researching a topic for the user, using your own knowledge, as well as web search. " +
-							"The users is going to ask you a question, and you will return detailed and comprehensive research on the topic.",
+							"You are a research assistant, tasked with researching a topic for the user, using web search. " +
+							"The users is going to ask you a question, and you will research that using the wbe search tool, and return detailed and comprehensive research on the topic.",
 					},
 					{
 						role: "user",
