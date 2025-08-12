@@ -1,10 +1,11 @@
 import { ModelRegistry } from "@token-ring/ai-client";
 import { ChatService } from "@token-ring/chat";
+import { Registry } from "@token-ring/registry";
 import { z } from "zod";
 
 export interface ResearchArgs {
-  topic: string;
-  prompt: string;
+  topic?: string;
+  prompt?: string;
 }
 
 export interface ResearchSuccessResult {
@@ -31,10 +32,31 @@ export type ResearchResult = ResearchSuccessResult | ResearchErrorResult;
  */
 export async function execute(
   { topic, prompt }: ResearchArgs,
-  registry: TokenRingRegistry,
+  registry: Registry,
 ): Promise<ResearchResult> {
-  const chatService = registry.requireFirstServiceByType(ChatService) as ChatService;
-  const modelRegistry = registry.requireFirstServiceByType(ModelRegistry) as any;
+  const chatService = registry.requireFirstServiceByType(ChatService);
+  const modelRegistry = registry.requireFirstServiceByType(ModelRegistry);
+
+  if (! topic) {
+      chatService.systemLine(`\[Research] Error: Topic is required`);
+      return {
+          status: "error",
+          topic: "",
+          error: "Topic is required",
+          message: `Failed to generate research, topic is required`,
+      };
+  }
+
+  if (! prompt) {
+      chatService.systemLine(`\[Research] Error: Prompt is required`);
+      return {
+          status: "error",
+          topic: "",
+          error: "Prompt is required",
+          message: `Failed to generate research, prompt is required`,
+      };
+  }
+
 
   chatService.systemLine(`\[Research] Dispatching research request for "${topic}" to Gemini`);
 
@@ -67,7 +89,7 @@ export async function execute(
     chatService.out(`Research: \n${research}"`);
 
     // Show token usage if present
-    const usage: any = (response as any)?.usage;
+    const usage: any = response.usage;
     if (usage) {
       const { promptTokens, completionTokens, cost } = usage;
       chatService.systemLine(
