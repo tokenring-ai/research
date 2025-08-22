@@ -3,6 +3,7 @@ import {outputChatAnalytics} from "@token-ring/ai-client/util/outputChatAnalytic
 import {ChatService} from "@token-ring/chat";
 import {Registry} from "@token-ring/registry";
 import {z} from "zod";
+import ResearchService from "../ResearchService.js";
 
 export interface ResearchArgs {
   topic?: string;
@@ -39,6 +40,7 @@ export async function execute(
 ): Promise<ResearchResult> {
   const chatService = registry.requireFirstServiceByType(ChatService);
   const modelRegistry = registry.requireFirstServiceByType(ModelRegistry);
+  const researchService = registry.requireFirstServiceByType(ResearchService);
 
   if (!topic) {
     throw new Error(`[${name}] Error: Topic is required`);
@@ -48,16 +50,14 @@ export async function execute(
     throw new Error(`[${name}] Error: Prompt is required`);
   }
 
-
-  chatService.systemLine(`[Research] Dispatching research request for "${topic}" to Gemini`);
-
   // Get Gemini client from model registry
-  const geminiClient = await modelRegistry.chat.getFirstOnlineClient(
-    "gemini-2.5-flash-web-search",
-  );
+  const aiChatClient = await modelRegistry.chat.getFirstOnlineClient(researchService.researchModel);
+
+
+  chatService.systemLine(`[Research] Dispatching research request for "${topic}" to ${aiChatClient.getModelId()}`);
 
   // Generate research using Gemini
-  const [research, response] = await geminiClient.textChat(
+  const [research, response] = await aiChatClient.textChat(
     {
       tools: {},
       messages: [
