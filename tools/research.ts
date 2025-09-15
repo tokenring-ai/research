@@ -1,7 +1,6 @@
-import {ModelRegistry} from "@token-ring/ai-client";
-import {outputChatAnalytics} from "@token-ring/ai-client/util/outputChatAnalytics";
-import {ChatService} from "@token-ring/chat";
-import {Registry} from "@token-ring/registry";
+import {Agent} from "@tokenring-ai/agent";
+import {ModelRegistry} from "@tokenring-ai/ai-client";
+import {outputChatAnalytics} from "@tokenring-ai/ai-client/util/outputChatAnalytics";
 import {z} from "zod";
 import ResearchService from "../ResearchService.js";
 
@@ -29,18 +28,17 @@ export type ResearchResult = ResearchSuccessResult | ResearchErrorResult;
 export const name = "research/run";
 
 /**
- * Dispatches a research request to Gemini and returns the generated research
+ * Dispatches a research request to an AI Research Agent and returns the generated research
  * @param args
- * @param registry - The package registry
+ * @param agent
  * @returns Result containing the generated research
  */
 export async function execute(
   {topic, prompt}: ResearchArgs,
-  registry: Registry,
+  agent: Agent,
 ): Promise<ResearchResult> {
-  const chatService = registry.requireFirstServiceByType(ChatService);
-  const modelRegistry = registry.requireFirstServiceByType(ModelRegistry);
-  const researchService = registry.requireFirstServiceByType(ResearchService);
+  const modelRegistry = agent.requireFirstServiceByType(ModelRegistry);
+  const researchService = agent.requireFirstServiceByType(ResearchService);
 
   if (!topic) {
     throw new Error(`[${name}] Error: Topic is required`);
@@ -54,7 +52,7 @@ export async function execute(
   const aiChatClient = await modelRegistry.chat.getFirstOnlineClient(researchService.researchModel);
 
 
-  chatService.systemLine(`[Research] Dispatching research request for "${topic}" to ${aiChatClient.getModelId()}`);
+  agent.systemMessage(`[Research] Dispatching research request for "${topic}" to ${aiChatClient.getModelId()}`);
 
   // Generate research using Gemini
   const [research, response] = await aiChatClient.textChat(
@@ -73,13 +71,13 @@ export async function execute(
         },
       ],
     },
-    registry,
+    agent,
   );
 
-  chatService.systemLine(`[${name}] Successfully generated research for "${topic}"`);
-  chatService.out(`Research: \n${research}"`);
+  agent.systemMessage(`[${name}] Successfully generated research for "${topic}"`);
+  agent.chatOutput(`Research: \n${research}"`);
 
-  outputChatAnalytics(response, chatService, name);
+  outputChatAnalytics(response, agent, name);
 
   return {
     status: "completed",

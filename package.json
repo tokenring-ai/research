@@ -1,11 +1,11 @@
 {
- "name": "@token-ring/research",
+ "name": "@tokenring-ai/research",
  "version": "0.1.0",
  "description": "Research tools for Token Ring",
  "dependencies": {
-  "@token-ring/ai-client": "0.1.0",
-  "@token-ring/chat": "0.1.0",
-  "@token-ring/registry": "0.1.0"
+  "@tokenring-ai/ai-client": "0.1.0",
+  "@tokenring-ai/agent": "0.1.0",
+  "@tokenring-ai/registry": "0.1.0"
  },
  "exports": {
   ".": "./index.ts",
