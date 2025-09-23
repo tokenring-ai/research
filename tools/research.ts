@@ -37,8 +37,8 @@ export async function execute(
   {topic, prompt}: ResearchArgs,
   agent: Agent,
 ): Promise<ResearchResult> {
-  const modelRegistry = agent.requireFirstServiceByType(ModelRegistry);
-  const researchService = agent.requireFirstServiceByType(ResearchService);
+  const modelRegistry = agent.requireServiceByType(ModelRegistry);
+  const researchService = agent.requireServiceByType(ResearchService);
 
   if (!topic) {
     throw new Error(`[${name}] Error: Topic is required`);

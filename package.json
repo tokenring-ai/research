@@ -4,8 +4,7 @@
  "description": "Research tools for Token Ring",
  "dependencies": {
   "@tokenring-ai/ai-client": "0.1.0",
-  "@tokenring-ai/agent": "0.1.0",
-  "@tokenring-ai/registry": "0.1.0"
+  "@tokenring-ai/agent": "0.1.0"
  },
  "exports": {
   ".": "./index.ts",
