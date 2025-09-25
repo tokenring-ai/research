@@ -63,7 +63,7 @@ export async function execute(
           role: "system",
           content:
             "You are a research assistant, tasked with researching a topic for the user, using web search. " +
-            "The users is going to ask you a question, and you will research that using the wbe search tool, and return detailed and comprehensive research on the topic.",
+            "The users is going to ask you a question, and you will research that using the web search tool, and return detailed and comprehensive research on the topic.",
         },
         {
           role: "user",
