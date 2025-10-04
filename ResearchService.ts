@@ -1,8 +1,11 @@
 import {TokenRingService} from "@tokenring-ai/agent/types";
+import {z} from "zod";
 
-export interface ResearchServiceConfig {
-  researchModel: string;
-}
+export const ResearchServiceConfigSchema = z.object({
+  researchModel: z.string(),
+});
+
+export type ResearchServiceConfig = z.infer<typeof ResearchServiceConfigSchema>;
 
 /**
  * The actual implementation of GhostIOService
