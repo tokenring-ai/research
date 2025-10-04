@@ -1,6 +1,6 @@
 import {AgentTeam, TokenRingPackage} from "@tokenring-ai/agent";
 import packageJSON from './package.json' with {type: 'json'};
-import ResearchService, {ResearchServiceConfigSchema} from "./ResearchService";
+import ResearchService, {ResearchServiceConfigSchema} from "./ResearchService.ts";
 
 import * as tools from "./tools.ts";
 
