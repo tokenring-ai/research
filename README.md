@@ -19,6 +19,24 @@ integrates with the Token Ring Registry, Chat, and AI Client packages.
 - Strongly-typed parameters and results
 - Token usage logging (prompt tokens, completion tokens, estimated cost) when available from the model response
 
+## Global Scripting Functions
+
+When `@tokenring-ai/scripting` is available, the research package registers native functions:
+
+- **getResearchModel()**: Gets the configured research model name.
+  ```bash
+  /var $model = getResearchModel()
+  /call getResearchModel()
+  ```
+
+This function allows scripts to query the research configuration:
+
+```bash
+# Check which model is being used for research
+/var $model = getResearchModel()
+/echo Using research model: $model
+```
+
 ## Package entry points
 
 - `index.ts` — package metadata and exports
