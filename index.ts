@@ -6,7 +6,7 @@ import ResearchService, {ResearchServiceConfigSchema} from "./ResearchService.ts
 
 import * as tools from "./tools.ts";
 
-export const packageInfo: TokenRingPackage = {
+export default {
   name: packageJSON.name,
   version: packageJSON.version,
   description: packageJSON.description,
@@ -21,12 +21,12 @@ export const packageInfo: TokenRingPackage = {
         }
       );
     });
-    agentTeam.addTools(packageInfo, tools);
+    agentTeam.addTools(packageJSON.name, tools);
     const config = agentTeam.getConfigSlice('research', ResearchServiceConfigSchema.optional());
     if (config) {
       agentTeam.addServices(new ResearchService(config));
     }
   },
-};
+} as TokenRingPackage;
 
 export {default as ResearchService} from "./ResearchService.ts";
