@@ -3,7 +3,7 @@
  "version": "0.1.0",
  "description": "Research tools for Token Ring",
  "dependencies": {
-  "@tokenring-ai/ai-client": "0.1.0",
+  "@tokenring-ai/chat": "0.1.0",
   "@tokenring-ai/agent": "0.1.0"
  },
  "exports": {
