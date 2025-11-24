@@ -2,12 +2,13 @@ import {Agent} from "@tokenring-ai/agent";
 import {ModelRegistry} from "@tokenring-ai/ai-client";
 import {TokenRingService} from "@tokenring-ai/app/types";
 import {z} from "zod";
-import {name} from "./tools/research.js";
 import { outputChatAnalytics } from "@tokenring-ai/chat/util/outputChatAnalytics";
 
 export const ResearchServiceConfigSchema = z.object({
   researchModel: z.string(),
 });
+
+const name = "research/run";
 
 export type ResearchServiceConfig = z.infer<typeof ResearchServiceConfigSchema>;
 

@@ -1,4 +1,5 @@
 import {Agent} from "@tokenring-ai/agent";
+import {TokenRingToolDefinition} from "@tokenring-ai/chat/types";
 import {z} from "zod";
 import ResearchService from "../ResearchService.js";
 
@@ -23,7 +24,7 @@ export interface ResearchErrorResult {
 
 export type ResearchResult = ResearchSuccessResult | ResearchErrorResult;
 
-export const name = "research/run";
+const name = "research/run";
 
 /**
  * Dispatches a research request to an AI Research Agent and returns the generated research
@@ -31,8 +32,8 @@ export const name = "research/run";
  * @param agent
  * @returns Result containing the generated research
  */
-export async function execute(
-  {topic, prompt}: ResearchArgs,
+async function execute(
+  {topic, prompt}: z.infer<typeof inputSchema>,
   agent: Agent,
 ): Promise<ResearchResult> {
   const researchService = agent.requireServiceByType(ResearchService);
@@ -56,10 +57,10 @@ export async function execute(
 
 }
 
-export const description =
+const description =
   "Dispatches a research request to an AI agent, and returns the generated research content.";
 
-export const inputSchema = z.object({
+const inputSchema = z.object({
   topic: z.string().describe("The main topic or subject to research"),
   prompt: z
     .string()
@@ -67,3 +68,7 @@ export const inputSchema = z.object({
       "The detailed research prompt or specific questions to investigate about the topic",
     ),
 });
+
+export default {
+  name, description, inputSchema, execute,
+} as TokenRingToolDefinition<typeof inputSchema>;

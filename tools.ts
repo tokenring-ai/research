@@ -1,1 +1,1 @@
-export * as research from "./tools/research.ts";
+export {default as research} from "./tools/research.ts";
