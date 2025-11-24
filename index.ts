@@ -1,4 +1,4 @@
-import {AgentCommandService, AgentTeam, TokenRingPackage} from "@tokenring-ai/agent";
+import TokenRingApp, { TokenRingPlugin } from "@tokenring-ai/app";
 import {ChatService} from "@tokenring-ai/chat";
 import {ScriptingService} from "@tokenring-ai/scripting";
 import {ScriptingThis} from "@tokenring-ai/scripting/ScriptingService.js";
@@ -11,8 +11,8 @@ export default {
   name: packageJSON.name,
   version: packageJSON.version,
   description: packageJSON.description,
-  install(agentTeam: AgentTeam) {
-    agentTeam.services.waitForItemByType(ScriptingService).then((scriptingService: ScriptingService) => {
+  install(app: TokenRingApp) {
+    app.services.waitForItemByType(ScriptingService).then((scriptingService: ScriptingService) => {
       scriptingService.registerFunction("research", {
           type: 'native',
           params: ["topic", "prompt"],
@@ -22,14 +22,14 @@ export default {
         }
       );
     });
-    agentTeam.waitForService(ChatService, chatService =>
+    app.waitForService(ChatService, chatService =>
       chatService.addTools(packageJSON.name, tools)
     );
-    const config = agentTeam.getConfigSlice('research', ResearchServiceConfigSchema.optional());
+    const config = app.getConfigSlice('research', ResearchServiceConfigSchema.optional());
     if (config) {
-      agentTeam.addServices(new ResearchService(config));
+      app.addServices(new ResearchService(config));
     }
   },
-} as TokenRingPackage;
+} as TokenRingPlugin;
 
 export {default as ResearchService} from "./ResearchService.ts";

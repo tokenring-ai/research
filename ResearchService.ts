@@ -1,6 +1,6 @@
 import {Agent} from "@tokenring-ai/agent";
-import {TokenRingService} from "@tokenring-ai/agent/types";
 import {ModelRegistry} from "@tokenring-ai/ai-client";
+import {TokenRingService} from "@tokenring-ai/app/types";
 import {z} from "zod";
 import {name} from "./tools/research.js";
 import { outputChatAnalytics } from "@tokenring-ai/chat/util/outputChatAnalytics";
