@@ -1,8 +1,8 @@
 import {Agent} from "@tokenring-ai/agent";
-import {ModelRegistry} from "@tokenring-ai/ai-client";
+import {ChatModelRegistry} from "@tokenring-ai/ai-client/ModelRegistry";
 import {TokenRingService} from "@tokenring-ai/app/types";
+import {outputChatAnalytics} from "@tokenring-ai/chat/util/outputChatAnalytics";
 import {z} from "zod";
-import { outputChatAnalytics } from "@tokenring-ai/chat/util/outputChatAnalytics";
 
 export const ResearchServiceConfigSchema = z.object({
   researchModel: z.string(),
@@ -25,10 +25,10 @@ export default class ResearchService implements TokenRingService {
   }
 
   async runResearch(topic: string, prompt: string, agent: Agent): Promise<string> {
-    const modelRegistry = agent.requireServiceByType(ModelRegistry);
+    const chatModelRegistry = agent.requireServiceByType(ChatModelRegistry);
 
     // Get Gemini client from model registry
-    const aiChatClient = await modelRegistry.chat.getFirstOnlineClient(this.researchModel);
+    const aiChatClient = await chatModelRegistry.getFirstOnlineClient(this.researchModel);
 
 
     agent.systemMessage(`[Research] Dispatching research request for "${topic}" to ${aiChatClient.getModelId()}`);
