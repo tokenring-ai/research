@@ -31,4 +31,4 @@ export default {
       app.addServices(new ResearchService(config));
     }
   },
-} as TokenRingPlugin;
+} satisfies TokenRingPlugin;
