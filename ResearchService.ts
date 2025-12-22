@@ -8,7 +8,7 @@ export const ResearchServiceConfigSchema = z.object({
   researchModel: z.string(),
 });
 
-const name = "research/run";
+const name = "research_run";
 
 export type ResearchServiceConfig = z.infer<typeof ResearchServiceConfigSchema>;
 

@@ -24,7 +24,7 @@ export interface ResearchErrorResult {
 
 export type ResearchResult = ResearchSuccessResult | ResearchErrorResult;
 
-const name = "research/run";
+const name = "research_run";
 
 /**
  * Dispatches a research request to an AI Research Agent and returns the generated research
