@@ -2,12 +2,6 @@ import {Agent} from "@tokenring-ai/agent";
 import {TokenRingToolDefinition} from "@tokenring-ai/chat/types";
 import {z} from "zod";
 import ResearchService from "../ResearchService.js";
-
-export interface ResearchArgs {
-  topic?: string;
-  prompt?: string;
-}
-
 export interface ResearchSuccessResult {
   status: "completed";
   topic: string;
