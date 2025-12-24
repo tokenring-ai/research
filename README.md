@@ -10,6 +10,7 @@ The research package provides a ready-to-use research service that:
 - Integrates with Token Ring chat services for status messages and analytics
 - Provides both tool-based and direct API access to research functionality
 - Registers global scripting functions for programmatic access
+- Includes comprehensive error handling and input validation
 
 ## Features
 
@@ -19,6 +20,7 @@ The research package provides a ready-to-use research service that:
 - **Tool Registration**: Automatic tool registration with chat services
 - **Scripting Support**: Global function registration for scripting environments
 - **Analytics Integration**: Built-in token usage logging and chat analytics
+- **Error Handling**: Comprehensive validation and error management
 
 ## Installation
 
@@ -286,12 +288,18 @@ scriptingService.registerFunction("research", {
 
 ```json
 {
-  "@tokenring-ai/app": "0.2.0",
-  "@tokenring-ai/ai-client": "0.2.0",
-  "@tokenring-ai/chat": "0.2.0",
-  "@tokenring-ai/agent": "0.2.0",
-  "@tokenring-ai/scripting": "0.2.0",
-  "zod": "catalog:"
+  "dependencies": {
+    "@tokenring-ai/app": "0.2.0",
+    "@tokenring-ai/ai-client": "0.2.0",
+    "@tokenring-ai/chat": "0.2.0",
+    "@tokenring-ai/agent": "0.2.0",
+    "@tokenring-ai/scripting": "0.2.0",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "vitest": "catalog:",
+    "typescript": "catalog:"
+  }
 }
 ```
 
@@ -333,12 +341,3 @@ The research package provides comprehensive error handling:
 ## License
 
 MIT (see LICENSE file)
-
-## Changelog
-
-### Version 0.2.0
-- Initial release with research service implementation
-- Tool integration with chat service
-- Plugin architecture integration
-- Scripting function support
-- Comprehensive error handling and validation
