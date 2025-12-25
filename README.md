@@ -1,6 +1,6 @@
 # @tokenring-ai/research
 
-Research tools for the Token Ring ecosystem that provides AI-powered research capabilities using web-search-enabled models. This package integrates with the Token Ring agent, chat, and AI client systems to dispatch research requests and return comprehensive research content.
+Research tools for Token Ring that provides AI-powered research capabilities using web-search-enabled models. This package integrates with the Token Ring agent, chat, and AI client systems to dispatch research requests and return comprehensive research content.
 
 ## Overview
 
@@ -162,27 +162,24 @@ export default {
   version: "0.2.0",
   install(app: TokenRingApp) {
     // 1. Register scripting function when ScriptingService is available
-    app.services.waitForItemByType(ScriptingService, (scriptingService) => {
+    app.services.waitForItemByType(ScriptingService, (scriptingService: ScriptingService) => {
       scriptingService.registerFunction("research", {
-        type: 'native',
-        params: ["topic", "prompt"],
-        async execute(this: ScriptingThis, topic: string, prompt: string): Promise<string> {
-          return await this.agent.requireServiceByType(ResearchService).runResearch(topic, prompt, this.agent);
+          type: 'native',
+          params: ["topic", "prompt"],
+          async execute(this: ScriptingThis, topic: string, prompt: string): Promise<string> {
+            return await this.agent.requireServiceByType(ResearchService).runResearch(topic, prompt, this.agent);
+          }
         }
-      });
+      );
     });
-
-    // 2. Register research tool with chat service
     app.waitForService(ChatService, chatService => 
       chatService.addTools(packageJSON.name, tools)
     );
-
-    // 3. Initialize ResearchService when configuration is present
     const config = app.getConfigSlice('research', ResearchServiceConfigSchema.optional());
     if (config) {
       app.addServices(new ResearchService(config));
     }
-  }
+  },
 }
 ```
 
@@ -291,10 +288,10 @@ scriptingService.registerFunction("research", {
   "dependencies": {
     "@tokenring-ai/app": "0.2.0",
     "@tokenring-ai/ai-client": "0.2.0",
+    "zod": "catalog:",
     "@tokenring-ai/chat": "0.2.0",
     "@tokenring-ai/agent": "0.2.0",
-    "@tokenring-ai/scripting": "0.2.0",
-    "zod": "catalog:"
+    "@tokenring-ai/scripting": "0.2.0"
   },
   "devDependencies": {
     "vitest": "catalog:",
