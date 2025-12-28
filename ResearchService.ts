@@ -28,7 +28,7 @@ export default class ResearchService implements TokenRingService {
     const chatModelRegistry = agent.requireServiceByType(ChatModelRegistry);
 
     // Get Gemini client from model registry
-    const aiChatClient = await chatModelRegistry.getFirstOnlineClient(this.researchModel);
+    const aiChatClient = await chatModelRegistry.getClient(this.researchModel);
 
 
     agent.systemMessage(`[Research] Dispatching research request for "${topic}" to ${aiChatClient.getModelId()}`);
