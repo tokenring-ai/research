@@ -30,7 +30,6 @@ export default {
     app.waitForService(ChatService, chatService =>
       chatService.addTools(packageJSON.name, tools)
     );
-    // const config = app.getConfigSlice('research', ResearchServiceConfigSchema.optional());
     if (config.research) {
       app.addServices(new ResearchService(config.research));
     }
