@@ -31,7 +31,7 @@ export default class ResearchService implements TokenRingService {
     const aiChatClient = await chatModelRegistry.getClient(this.researchModel);
 
 
-    agent.systemMessage(`[Research] Dispatching research request for "${topic}" to ${aiChatClient.getModelId()}`);
+    agent.infoMessage(`[Research] Dispatching research request for "${topic}" to ${aiChatClient.getModelId()}`);
 
     // Generate research using Gemini
     const [research, response] = await aiChatClient.textChat(
@@ -53,8 +53,13 @@ export default class ResearchService implements TokenRingService {
       agent,
     );
 
-    agent.systemMessage(`[${name}] Successfully generated research for "${topic}"`);
-    agent.chatOutput(`Research: \n${research}"`);
+    agent.infoMessage(`[${name}] Successfully generated research for "${topic}"`);
+    agent.artifactOutput({
+      name: `Research on ${topic}`,
+      encoding: 'text',
+      mimeType: 'text/markdown',
+      body: `Topic: ${topic}\nPrompt: ${prompt}\n\nResult: ${research}`
+    });
 
     outputChatAnalytics(response, agent, name);
 
