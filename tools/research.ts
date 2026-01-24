@@ -20,6 +20,7 @@ export interface ResearchErrorResult {
 export type ResearchResult = ResearchSuccessResult | ResearchErrorResult;
 
 const name = "research_run";
+const displayName = "Research/research";
 
 /**
  * Dispatches a research request to an AI Research Agent and returns the generated research
@@ -65,5 +66,5 @@ const inputSchema = z.object({
 });
 
 export default {
-  name, description, inputSchema, execute,
+  name, displayName, description, inputSchema, execute,
 } satisfies TokenRingToolDefinition<typeof inputSchema>;

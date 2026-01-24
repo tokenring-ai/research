@@ -28,7 +28,7 @@ export default {
       );
     });
     app.waitForService(ChatService, chatService =>
-      chatService.addTools(packageJSON.name, tools)
+      chatService.addTools(tools)
     );
     if (config.research) {
       app.addServices(new ResearchService(config.research));
