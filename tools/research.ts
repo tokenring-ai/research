@@ -1,5 +1,5 @@
 import {Agent} from "@tokenring-ai/agent";
-import {TokenRingToolDefinition} from "@tokenring-ai/chat/schema";
+import {TokenRingToolDefinition, type TokenRingToolJSONResult} from "@tokenring-ai/chat/schema";
 import {z} from "zod";
 import ResearchService from "../ResearchService.js";
 
@@ -29,9 +29,9 @@ const displayName = "Research/research";
  * @returns Result containing the generated research
  */
 async function execute(
-  {topic, prompt}: z.infer<typeof inputSchema>,
+  {topic, prompt}: z.output<typeof inputSchema>,
   agent: Agent,
-): Promise<ResearchResult> {
+): Promise<TokenRingToolJSONResult<ResearchSuccessResult>> {
   const researchService = agent.requireServiceByType(ResearchService);
 
   if (!topic) {
@@ -45,10 +45,13 @@ async function execute(
   const research = await researchService.runResearch(topic, prompt, agent);
 
   return {
-    status: "completed",
-    topic,
-    research,
-    message: `Research completed successfully for topic: ${topic}`,
+    type: "json",
+    data: {
+      status: "completed",
+      topic,
+      research,
+      message: `Research completed successfully for topic: ${topic}`,
+    }
   };
 
 }
