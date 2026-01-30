@@ -18,17 +18,15 @@ export type ResearchServiceConfig = z.infer<typeof ResearchServiceConfigSchema>;
 export default class ResearchService implements TokenRingService {
   name = "ResearchService";
   description = "Provides Research functionality";
-  researchModel: string;
 
-  constructor({ researchModel }: ResearchServiceConfig) {
-    this.researchModel = researchModel;
+  constructor(private options: ResearchServiceConfig) {
   }
 
   async runResearch(topic: string, prompt: string, agent: Agent): Promise<string> {
     const chatModelRegistry = agent.requireServiceByType(ChatModelRegistry);
 
     // Get Gemini client from model registry
-    const aiChatClient = await chatModelRegistry.getClient(this.researchModel);
+    const aiChatClient = await chatModelRegistry.getClient(this.options.researchModel);
 
 
     agent.infoMessage(`[Research] Dispatching research request for "${topic}" to ${aiChatClient.getModelId()}`);
