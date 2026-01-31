@@ -48,9 +48,9 @@ const pluginConfig = {
 import researchPlugin from "@tokenring-ai/research";
 import app from "@tokenring-ai/app";
 
-const app = new app.App();
+const appInstance = new app.App();
 
-app.addPlugin(researchPlugin, {
+appInstance.addPlugin(researchPlugin, {
   research: {
     researchModel: "gemini-2.5-flash-web-search"
   }
@@ -74,15 +74,17 @@ Dispatches a research request to an AI Research Agent and returns the generated 
 ```typescript
 {
   name: "research_run",
+  displayName: "Research/research",
   description: "Dispatches a research request to an AI agent, and returns the generated research content.",
   inputSchema: {
-    topic: string        // Required: The main topic or subject to research
-    prompt: string       // Required: The detailed research prompt or specific questions to investigate about the topic
+    topic: z.string().describe("The main topic or subject to research"),
+    prompt: z.string().describe("The detailed research prompt or specific questions to investigate about the topic")
   }
 }
 ```
 
 **Features:**
+
 - Uses configured research model with web search capabilities
 - Generates comprehensive research content
 - Creates artifact output for research results
@@ -173,6 +175,7 @@ runResearch(topic: string, prompt: string, agent: Agent): Promise<string>
 - Provides analytics on the research execution
 
 **Dependencies:**
+
 - `ChatModelRegistry`: Retrieves the configured AI model for research
 - `Agent`: Uses the agent's system message and chat output capabilities
 - `ChatService`: Provides analytics and output through the agent's chat interface
@@ -210,9 +213,9 @@ Research results are returned directly to the caller and are not persisted beyon
 import app from "@tokenring-ai/app";
 import researchPlugin from "@tokenring-ai/research";
 
-const app = new app.App();
+const appInstance = new app.App();
 
-app.addPlugin(researchPlugin, {
+appInstance.addPlugin(researchPlugin, {
   research: {
     researchModel: "gemini-2.5-flash-web-search"
   }
@@ -257,17 +260,17 @@ console.log(research);
 import app from "@tokenring-ai/app";
 import researchPlugin from "@tokenring-ai/research";
 
-const app = new app.App();
+const appInstance = new app.App();
 
 // Configure multiple research plugins with different models
-app.addPlugin(researchPlugin, {
+appInstance.addPlugin(researchPlugin, {
   name: 'research-fast',
   research: {
     researchModel: 'gemini-2.0-flash-exp'
   }
 });
 
-app.addPlugin(researchPlugin, {
+appInstance.addPlugin(researchPlugin, {
   name: 'research-deep',
   research: {
     researchModel: 'gemini-2.5-flash-web-search'
@@ -291,7 +294,7 @@ Tools are registered through the plugin's install method:
 
 ```typescript
 app.waitForService(ChatService, chatService => {
-  chatService.addTools(packageJSON.name, tools);
+  chatService.addTools(tools);
 });
 ```
 
