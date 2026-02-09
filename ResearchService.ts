@@ -16,7 +16,7 @@ export type ResearchServiceConfig = z.infer<typeof ResearchServiceConfigSchema>;
  * The actual implementation of GhostIOService
  */
 export default class ResearchService implements TokenRingService {
-  name = "ResearchService";
+  readonly name = "ResearchService";
   description = "Provides Research functionality";
 
   constructor(private options: ResearchServiceConfig) {
