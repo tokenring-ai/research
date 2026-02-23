@@ -1,7 +1,7 @@
 import {Agent} from "@tokenring-ai/agent";
 import {ChatModelRegistry} from "@tokenring-ai/ai-client/ModelRegistry";
 import {TokenRingService} from "@tokenring-ai/app/types";
-import {outputChatAnalytics} from "@tokenring-ai/chat/util/outputChatAnalytics";
+import {getChatAnalytics} from "@tokenring-ai/chat/util/getChatAnalytics";
 import {z} from "zod";
 
 export const ResearchServiceConfigSchema = z.object({
@@ -56,7 +56,6 @@ export default class ResearchService implements TokenRingService {
       agent,
     );
 
-    agent.infoMessage(`[${name}] Successfully generated research for "${topic}"`);
     agent.artifactOutput({
       name: `Research on ${topic}`,
       encoding: 'text',
@@ -64,7 +63,7 @@ export default class ResearchService implements TokenRingService {
       body: `Topic: ${topic}\nPrompt: ${prompt}\n\nResult: ${research}`
     });
 
-    outputChatAnalytics(response, agent, name);
+    agent.infoMessage(`[${name}] Successfully generated research on "${topic}"\n\n${getChatAnalytics(response)}`);
 
     return research;
   }
