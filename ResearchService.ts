@@ -2,15 +2,9 @@ import {Agent} from "@tokenring-ai/agent";
 import {ChatModelRegistry} from "@tokenring-ai/ai-client/ModelRegistry";
 import {TokenRingService} from "@tokenring-ai/app/types";
 import {getChatAnalytics} from "@tokenring-ai/chat/util/getChatAnalytics";
-import {z} from "zod";
-
-export const ResearchServiceConfigSchema = z.object({
-  researchModel: z.string(),
-});
+import type {ResearchServiceConfig} from "./schema.ts";
 
 const name = "research_run";
-
-export type ResearchServiceConfig = z.infer<typeof ResearchServiceConfigSchema>;
 
 /**
  * The actual implementation of GhostIOService

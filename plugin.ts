@@ -4,12 +4,13 @@ import {ScriptingService} from "@tokenring-ai/scripting";
 import {ScriptingThis} from "@tokenring-ai/scripting/ScriptingService";
 import {z} from "zod";
 import packageJSON from './package.json' with {type: 'json'};
-import ResearchService, {ResearchServiceConfigSchema} from "./ResearchService.ts";
+import ResearchService from "./ResearchService.ts";
+import {ResearchServiceConfigSchema} from "./schema.ts";
 
 import tools from "./tools.ts";
 
 const packageConfigSchema = z.object({
-  research: ResearchServiceConfigSchema.optional()
+  research: ResearchServiceConfigSchema.prefault({})
 });
 
 export default {
@@ -30,9 +31,7 @@ export default {
     app.waitForService(ChatService, chatService =>
       chatService.addTools(tools)
     );
-    if (config.research) {
-      app.addServices(new ResearchService(config.research));
-    }
+    app.addServices(new ResearchService(config.research));
   },
   config: packageConfigSchema
 } satisfies TokenRingPlugin<typeof packageConfigSchema>;
