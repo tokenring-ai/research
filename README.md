@@ -14,9 +14,10 @@ bun install @tokenring-ai/research
 
 - AI-powered research with web search capabilities
 - Integration with Token Ring agent framework
-- Tool-based interaction with agents
-- Scripting function for programmatic research
+- Tool-based interaction with agents (`research_run`)
+- Scripting function for programmatic research (`research`)
 - Artifact output generation for research results
+- Strict adherence to factual accuracy and source citation
 
 ## Plugin Configuration
 
@@ -25,21 +26,32 @@ The research package supports configuration through the Token Ring application c
 ### Configuration Schema
 
 ```typescript
-const ResearchServiceConfigSchema = z.object({
-  researchModel: z.string(),
-});
+import { ResearchServiceConfigSchema } from "@tokenring-ai/research/schema";
 
 const packageConfigSchema = z.object({
-  research: ResearchServiceConfigSchema.optional()
+  research: ResearchServiceConfigSchema.prefault({})
 });
 ```
+
+### Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `researchModel` | string | `"auto?websearch"` | The AI model name for research (must support web search) |
 
 ### Configuration Example
 
 ```typescript
 const pluginConfig = {
   research: {
-    researchModel: "gemini-2.5-flash-web-search"  // Required: AI model name that supports web search
+    researchModel: "auto?websearch"  // Default: AI model that supports web search
+  }
+};
+
+// Or with a specific model
+const pluginConfig = {
+  research: {
+    researchModel: "gemini-2.5-flash-web-search"  // Specific model with web search
   }
 };
 ```
@@ -47,14 +59,14 @@ const pluginConfig = {
 ### Plugin Registration
 
 ```typescript
-import researchPlugin from "@tokenring-ai/research";
 import app from "@tokenring-ai/app";
+import researchPlugin from "@tokenring-ai/research";
 
 const appInstance = new app.App();
 
 appInstance.addPlugin(researchPlugin, {
   research: {
-    researchModel: "gemini-2.5-flash-web-search"
+    researchModel: "auto?websearch"
   }
 });
 ```
@@ -88,8 +100,10 @@ Dispatches a research request to an AI Research Agent and returns the generated 
 
 **Parameters:**
 
-- `topic` (string): The main topic or subject to research
-- `prompt` (string): The detailed research prompt or specific questions to investigate about the topic
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `topic` | string | Yes | The main topic or subject to research |
+| `prompt` | string | Yes | The detailed research prompt or specific questions to investigate about the topic |
 
 **Return Type:**
 
@@ -100,14 +114,34 @@ interface ResearchSuccessResult {
   research: string;
   message: string;
 }
+
+interface ResearchErrorResult {
+  status: "error";
+  topic: string;
+  error: string;
+  message: string;
+}
+
+type ResearchResult = ResearchSuccessResult | ResearchErrorResult;
 ```
 
 **Features:**
 
 - Uses configured research model with web search capabilities
-- Generates comprehensive research content
-- Creates artifact output for research results
+- Generates comprehensive research content with strict factual accuracy
+- Creates artifact output for research results in markdown format
 - Provides detailed analytics on research execution
+- Enforces source citation and verbatim extraction from reliable sources
+
+**System Instructions:**
+
+The research AI follows strict guidelines:
+
+1. **Verbatim Extraction**: Extracts relevant text verbatim from sources
+2. **Source Citation**: Every claim must be accompanied by a specific URL or named reputable source
+3. **Zero Tolerance for Hallucination**: States when information cannot be found
+4. **Conflicting Data**: Reports both perspectives when sources conflict
+5. **No Speculation**: Returns only explicitly documented information
 
 **Usage Example:**
 
@@ -127,8 +161,8 @@ The main service class that implements `TokenRingService`. It manages research r
 
 **Service Properties:**
 
-- `name`: Service identifier ("ResearchService")
-- `description`: Service description ("Provides Research functionality")
+- `name`: Service identifier (`"ResearchService"`)
+- `description`: Service description (`"Provides Research functionality"`)
 
 **Constructor Parameters:**
 
@@ -141,7 +175,7 @@ interface ResearchServiceConfig {
 **Methods:**
 
 ```typescript
-runResearch(topic: string, prompt: string, agent: Agent): Promise<string>
+async runResearch(topic: string, prompt: string, agent: Agent): Promise<string>
 ```
 
 **Method Description:**
@@ -150,11 +184,11 @@ runResearch(topic: string, prompt: string, agent: Agent): Promise<string>
 
 **Implementation Details:**
 
-- Retrieves the configured research model from the agent's ChatModelRegistry
-- Sends a system message instructing the AI to research the topic using web search with strict adherence to factual accuracy
-- Returns detailed research content as a string
-- Generates artifact output with the research results in markdown format
-- Provides analytics on the research execution through outputChatAnalytics
+1. Retrieves the configured research model from the agent's `ChatModelRegistry`
+2. Sends a system message instructing the AI to research the topic using web search with strict adherence to factual accuracy
+3. Returns detailed research content as a string
+4. Generates artifact output with the research results in markdown format
+5. Provides analytics on the research execution through `outputChatAnalytics`
 
 **Dependencies:**
 
@@ -171,10 +205,11 @@ The package registers a global `research` function that can be used in scripting
 research(topic: string, prompt: string): Promise<string>
 
 // Usage example
-const research = await research(
+const researchResult = await research(
   "Quantum Computing",
   "What are the latest breakthroughs and commercial applications?"
 );
+console.log(researchResult);
 ```
 
 The function is automatically registered with the ScriptingService when the plugin is installed and can be used in scripting contexts without manual registration.
@@ -201,7 +236,7 @@ const appInstance = new app.App();
 
 appInstance.addPlugin(researchPlugin, {
   research: {
-    researchModel: "gemini-2.5-flash-web-search"
+    researchModel: "auto?websearch"
   }
 });
 ```
@@ -229,11 +264,11 @@ console.log('Research results:', research);
 
 ```typescript
 // The research function is automatically registered by the plugin
-const research = await research(
+const researchResult = await research(
   'Machine Learning',
   'Explain the latest advances in transformer models'
 );
-console.log(research);
+console.log(researchResult);
 ```
 
 ### 4. Direct Service Usage
@@ -243,7 +278,7 @@ import { ResearchService } from "@tokenring-ai/research";
 import { Agent } from "@tokenring-ai/agent";
 
 const researchService = new ResearchService({
-  researchModel: "gemini-2.5-flash-web-search"
+  researchModel: "auto?websearch"
 });
 
 const agent = new Agent();
@@ -254,6 +289,22 @@ const research = await researchService.runResearch(
   'What are the current trends in decentralized identity?',
   agent
 );
+
+console.log('Research:', research);
+```
+
+### 5. Error Handling
+
+```typescript
+try {
+  const research = await research(
+    'Quantum Computing',
+    'Latest breakthroughs in 2024'
+  );
+  console.log('Research completed:', research);
+} catch (error) {
+  console.error('Research failed:', error.message);
+}
 ```
 
 ## Integration
@@ -266,6 +317,14 @@ Tools are registered through the plugin's install method:
 app.waitForService(ChatService, chatService => {
   chatService.addTools(tools);
 });
+```
+
+Where `tools` is exported from `@tokenring-ai/research/tools`:
+
+```typescript
+import tools from "@tokenring-ai/research/tools";
+
+// tools = { research: { name: "research_run", ... } }
 ```
 
 ### Scripting Function Registration
@@ -282,14 +341,24 @@ app.services.waitForItemByType(ScriptingService, (scriptingService: ScriptingSer
 });
 ```
 
+### Service Registration
+
+The service is automatically registered when the plugin is installed:
+
+```typescript
+app.addServices(new ResearchService(config.research));
+```
+
 ## Best Practices
 
-- **Model Selection**: Choose a research model that supports web search capabilities (e.g., "gemini-2.5-flash-web-search")
+- **Model Selection**: Choose a research model that supports web search capabilities (e.g., `"auto?websearch"` or `"gemini-2.5-flash-web-search"`)
 - **Topic Clarity**: Provide clear, specific topics and prompts for the best research results
 - **Artifact Output**: Research results are automatically output as artifacts for easy access
 - **Analytics**: Use the analytics provided by the agent's chat service to monitor research performance
 - **Error Handling**: Handle potential errors from the AI model or network issues gracefully
 - **Tool Usage**: Use tools (`research_run`) instead of direct service calls for better integration
+- **Source Verification**: The research AI is configured to verify sources and cite them appropriately
+- **Factual Accuracy**: Trust the strict guidelines that prevent hallucination and speculation
 
 ## Testing and Development
 
@@ -325,6 +394,7 @@ pkg/research/
 ├── tools.ts                         # Tool exports
 ├── tools/
 │   └── research.ts                  # Research tool implementation
+├── schema.ts                        # Configuration schema definitions
 ├── package.json                     # Package metadata and dependencies
 └── vitest.config.ts                 # Test configuration
 ```
@@ -339,17 +409,21 @@ bun run build
 
 **Production Dependencies:**
 
-- `@tokenring-ai/agent` - Central orchestration system
-- `@tokenring-ai/app` - Base application framework and plugin system
-- `@tokenring-ai/chat` - Chat service and context handling
-- `@tokenring-ai/ai-client` - AI model registry and client
-- `@tokenring-ai/scripting` - Scripting functions and execution
-- `zod` - Runtime type validation and schema definition
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `@tokenring-ai/agent` | 0.2.0 | Central orchestration system |
+| `@tokenring-ai/app` | 0.2.0 | Base application framework and plugin system |
+| `@tokenring-ai/chat` | 0.2.0 | Chat service and context handling |
+| `@tokenring-ai/ai-client` | 0.2.0 | AI model registry and client |
+| `@tokenring-ai/scripting` | 0.2.0 | Scripting functions and execution |
+| `zod` | ^4.3.6 | Runtime type validation and schema definition |
 
 **Development Dependencies:**
 
-- `vitest` - Unit testing framework
-- `typescript` - TypeScript compiler
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `vitest` | ^4.0.18 | Unit testing framework |
+| `typescript` | ^5.9.3 | TypeScript compiler |
 
 ## Related Components
 
