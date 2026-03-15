@@ -80,7 +80,7 @@ Executes research using the configured AI model with web search capabilities. Th
 2. Sends a system message instructing the AI to research the topic with strict adherence to factual accuracy
 3. Returns detailed research content as a string
 4. Generates artifact output with the research results in markdown format
-5. Provides analytics on the research execution through `outputChatAnalytics`
+5. Provides analytics on the research execution through `getChatAnalytics`
 
 ### Tools
 
@@ -445,7 +445,7 @@ bun run build
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| `vitest` | ^4.0.18 | Unit testing framework |
+| `vitest` | ^4.1.0 | Unit testing framework |
 | `typescript` | ^5.9.3 | TypeScript compiler |
 
 ## Related Components
