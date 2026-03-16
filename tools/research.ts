@@ -56,8 +56,7 @@ async function execute(
 
 }
 
-const description =
-  "Dispatches a research request to an AI agent, and returns the generated research content.";
+const description = "Dispatches a research request to an AI agent, and returns the generated research content.";
 
 const inputSchema = z.object({
   topic: z.string().describe("The main topic or subject to research"),
