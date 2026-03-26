@@ -18,7 +18,7 @@ Research tools for Token Ring that provides AI-powered research capabilities usi
 ## Installation
 
 ```bash
-bun install @tokenring-ai/research
+bun add @tokenring-ai/research
 ```
 
 ## Features
@@ -96,7 +96,7 @@ Dispatches a research request to an AI Research Agent and returns the generated 
 {
   name: "research_run",
   displayName: "Research/research",
-  description: "Dispatches a research request to an AI agent, and returns the generated research content.",
+  description: "Dispatches a research request to an AI Research Agent and returns the generated research content.",
   inputSchema: z.object({
     topic: z.string().describe("The main topic or subject to research"),
     prompt: z.string().describe("The detailed research prompt or specific questions to investigate about the topic")
@@ -445,8 +445,8 @@ bun run build
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| `vitest` | ^4.1.0 | Unit testing framework |
-| `typescript` | ^5.9.3 | TypeScript compiler |
+| `vitest` | ^4.1.1 | Unit testing framework |
+| `typescript` | ^6.0.2 | TypeScript compiler |
 
 ## Related Components
 

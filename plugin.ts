@@ -3,7 +3,7 @@ import {ChatService} from "@tokenring-ai/chat";
 import {ScriptingService} from "@tokenring-ai/scripting";
 import {ScriptingThis} from "@tokenring-ai/scripting/ScriptingService";
 import {z} from "zod";
-import packageJSON from './package.json' with {type: 'json'};
+import packageJSON from "./package.json" with {type: "json"};
 import ResearchService from "./ResearchService.ts";
 import {ResearchServiceConfigSchema} from "./schema.ts";
 
