@@ -1,7 +1,7 @@
 {
   "name": "@tokenring-ai/research",
   "version": "0.2.0",
-  "description": "Research tools for Token Ring",
+  "description": "LLM-driven tools for systematic data gathering and deep analysis.",
   "dependencies": {
     "@tokenring-ai/app": "0.2.0",
     "@tokenring-ai/ai-client": "0.2.0",
