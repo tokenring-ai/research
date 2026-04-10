@@ -1,5 +1,5 @@
-import {Agent} from "@tokenring-ai/agent";
-import {TokenRingToolDefinition, type TokenRingToolJSONResult} from "@tokenring-ai/chat/schema";
+import type {Agent} from "@tokenring-ai/agent";
+import type {TokenRingToolDefinition, TokenRingToolJSONResult,} from "@tokenring-ai/chat/schema";
 import {z} from "zod";
 import ResearchService from "../ResearchService.js";
 
@@ -51,12 +51,12 @@ async function execute(
       topic,
       research,
       message: `Research completed successfully for topic: ${topic}`,
-    }
+    },
   };
-
 }
 
-const description = "Dispatches a research request to an AI agent, and returns the generated research content.";
+const description =
+  "Dispatches a research request to an AI agent, and returns the generated research content.";
 
 const inputSchema = z.object({
   topic: z.string().describe("The main topic or subject to research"),
@@ -68,5 +68,9 @@ const inputSchema = z.object({
 });
 
 export default {
-  name, displayName, description, inputSchema, execute,
+  name,
+  displayName,
+  description,
+  inputSchema,
+  execute,
 } satisfies TokenRingToolDefinition<typeof inputSchema>;

@@ -1,7 +1,7 @@
-import {TokenRingPlugin} from "@tokenring-ai/app";
+import type {TokenRingPlugin} from "@tokenring-ai/app";
 import {ChatService} from "@tokenring-ai/chat";
 import {ScriptingService} from "@tokenring-ai/scripting";
-import {ScriptingThis} from "@tokenring-ai/scripting/ScriptingService";
+import type {ScriptingThis} from "@tokenring-ai/scripting/ScriptingService";
 import {z} from "zod";
 import packageJSON from "./package.json" with {type: "json"};
 import ResearchService from "./ResearchService.ts";
@@ -10,7 +10,7 @@ import {ResearchServiceConfigSchema} from "./schema.ts";
 import tools from "./tools.ts";
 
 const packageConfigSchema = z.object({
-  research: ResearchServiceConfigSchema.prefault({})
+  research: ResearchServiceConfigSchema.prefault({}),
 });
 
 export default {
@@ -19,20 +19,28 @@ export default {
   version: packageJSON.version,
   description: packageJSON.description,
   install(app, config) {
-    app.services.waitForItemByType(ScriptingService, (scriptingService: ScriptingService) => {
-      scriptingService.registerFunction("research", {
-          type: 'native',
+    app.services.waitForItemByType(
+      ScriptingService,
+      (scriptingService: ScriptingService) => {
+        scriptingService.registerFunction("research", {
+          type: "native",
           params: ["topic", "prompt"],
-          async execute(this: ScriptingThis, topic: string, prompt: string): Promise<string> {
-            return await this.agent.requireServiceByType(ResearchService).runResearch(topic, prompt, this.agent);
-          }
-        }
-      );
-    });
-    app.waitForService(ChatService, chatService =>
-      chatService.addTools(tools)
+          async execute(
+            this: ScriptingThis,
+            topic: string,
+            prompt: string,
+          ): Promise<string> {
+            return await this.agent
+              .requireServiceByType(ResearchService)
+              .runResearch(topic, prompt, this.agent);
+          },
+        });
+      },
+    );
+    app.waitForService(ChatService, (chatService) =>
+      chatService.addTools(tools),
     );
     app.addServices(new ResearchService(config.research));
   },
-  config: packageConfigSchema
+  config: packageConfigSchema,
 } satisfies TokenRingPlugin<typeof packageConfigSchema>;

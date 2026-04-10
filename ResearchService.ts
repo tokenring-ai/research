@@ -1,6 +1,6 @@
-import {Agent} from "@tokenring-ai/agent";
+import type {Agent} from "@tokenring-ai/agent";
 import {ChatModelRegistry} from "@tokenring-ai/ai-client/ModelRegistry";
-import {TokenRingService} from "@tokenring-ai/app/types";
+import type {TokenRingService} from "@tokenring-ai/app/types";
 import {getChatAnalytics} from "@tokenring-ai/chat/util/getChatAnalytics";
 import type {ResearchServiceConfig} from "./schema.ts";
 
@@ -16,14 +16,21 @@ export default class ResearchService implements TokenRingService {
   constructor(private options: ResearchServiceConfig) {
   }
 
-  async runResearch(topic: string, prompt: string, agent: Agent): Promise<string> {
+  async runResearch(
+    topic: string,
+    prompt: string,
+    agent: Agent,
+  ): Promise<string> {
     const chatModelRegistry = agent.requireServiceByType(ChatModelRegistry);
 
     // Get Gemini client from model registry
-    const aiChatClient = await chatModelRegistry.getClient(this.options.researchModel);
+    const aiChatClient = chatModelRegistry.getClient(
+      this.options.researchModel,
+    );
 
-
-    agent.infoMessage(`[Research] Dispatching research request for "${topic}" to ${aiChatClient.getModelId()}`);
+    agent.infoMessage(
+      `[Research] Dispatching research request for "${topic}" to ${aiChatClient.getModelId()}`,
+    );
 
     // Generate research using Gemini
     const [research, response] = await aiChatClient.textChat(
@@ -52,12 +59,14 @@ export default class ResearchService implements TokenRingService {
 
     agent.artifactOutput({
       name: `Research on ${topic}`,
-      encoding: 'text',
-      mimeType: 'text/markdown',
-      body: `Topic: ${topic}\nPrompt: ${prompt}\n\nResult: ${research}`
+      encoding: "text",
+      mimeType: "text/markdown",
+      body: `Topic: ${topic}\nPrompt: ${prompt}\n\nResult: ${research}`,
     });
 
-    agent.infoMessage(`[${name}] Successfully generated research on "${topic}"\n\n${getChatAnalytics(response)}`);
+    agent.infoMessage(
+      `[${name}] Successfully generated research on "${topic}"\n\n${getChatAnalytics(response)}`,
+    );
 
     return research;
   }
