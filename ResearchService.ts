@@ -2,6 +2,7 @@ import type {Agent} from "@tokenring-ai/agent";
 import {ChatModelRegistry} from "@tokenring-ai/ai-client/ModelRegistry";
 import type {TokenRingService} from "@tokenring-ai/app/types";
 import {getChatAnalytics} from "@tokenring-ai/chat/util/getChatAnalytics";
+import markdownList from "@tokenring-ai/utility/string/markdownList";
 import type {ResearchServiceConfig} from "./schema.ts";
 
 const name = "research_run";
@@ -65,7 +66,7 @@ export default class ResearchService implements TokenRingService {
     });
 
     agent.infoMessage(
-      `[${name}] Successfully generated research on "${topic}"\n\n${getChatAnalytics(response)}`,
+      `[${name}] Successfully generated research on "${topic}"\n\n${markdownList(getChatAnalytics(response))}`,
     );
 
     return research;
