@@ -38,7 +38,7 @@ export default {
       },
     );
     app.waitForService(ChatService, (chatService) =>
-      chatService.addTools(tools),
+      chatService.addTools(...tools),
     );
     app.addServices(new ResearchService(config.research));
   },
