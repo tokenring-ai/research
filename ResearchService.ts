@@ -1,9 +1,9 @@
-import type {Agent} from "@tokenring-ai/agent";
-import {ChatModelRegistry} from "@tokenring-ai/ai-client/ModelRegistry";
-import type {TokenRingService} from "@tokenring-ai/app/types";
-import {getChatAnalytics} from "@tokenring-ai/chat/util/getChatAnalytics";
+import type { Agent } from "@tokenring-ai/agent";
+import { ChatModelRegistry } from "@tokenring-ai/ai-client/ModelRegistry";
+import type { TokenRingService } from "@tokenring-ai/app/types";
+import { getChatAnalytics } from "@tokenring-ai/chat/util/getChatAnalytics";
 import markdownList from "@tokenring-ai/utility/string/markdownList";
-import type {ResearchServiceConfig} from "./schema.ts";
+import type { ResearchServiceConfig } from "./schema.ts";
 
 const name = "research_run";
 
@@ -14,24 +14,15 @@ export default class ResearchService implements TokenRingService {
   readonly name = "ResearchService";
   description = "Provides Research functionality";
 
-  constructor(private options: ResearchServiceConfig) {
-  }
+  constructor(private options: ResearchServiceConfig) {}
 
-  async runResearch(
-    topic: string,
-    prompt: string,
-    agent: Agent,
-  ): Promise<string> {
+  async runResearch(topic: string, prompt: string, agent: Agent): Promise<string> {
     const chatModelRegistry = agent.requireServiceByType(ChatModelRegistry);
 
     // Get Gemini client from model registry
-    const aiChatClient = chatModelRegistry.getClient(
-      this.options.researchModel,
-    );
+    const aiChatClient = chatModelRegistry.getClient(this.options.researchModel);
 
-    agent.infoMessage(
-      `[Research] Dispatching research request for "${topic}" to ${aiChatClient.getModelId()}`,
-    );
+    agent.infoMessage(`[Research] Dispatching research request for "${topic}" to ${aiChatClient.getModelId()}`);
 
     // Generate research using Gemini
     const [research, response] = await aiChatClient.textChat(
@@ -65,9 +56,7 @@ export default class ResearchService implements TokenRingService {
       body: `Topic: ${topic}\nPrompt: ${prompt}\n\nResult: ${research}`,
     });
 
-    agent.infoMessage(
-      `[${name}] Successfully generated research on "${topic}"\n\n${markdownList(getChatAnalytics(response))}`,
-    );
+    agent.infoMessage(`[${name}] Successfully generated research on "${topic}"\n\n${markdownList(getChatAnalytics(response))}`);
 
     return research;
   }

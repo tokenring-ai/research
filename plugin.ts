@@ -1,11 +1,11 @@
-import type {TokenRingPlugin} from "@tokenring-ai/app";
-import {ChatService} from "@tokenring-ai/chat";
-import {ScriptingService} from "@tokenring-ai/scripting";
-import type {ScriptingThis} from "@tokenring-ai/scripting/ScriptingService";
-import {z} from "zod";
-import packageJSON from "./package.json" with {type: "json"};
+import type { TokenRingPlugin } from "@tokenring-ai/app";
+import { ChatService } from "@tokenring-ai/chat";
+import { ScriptingService } from "@tokenring-ai/scripting";
+import type { ScriptingThis } from "@tokenring-ai/scripting/ScriptingService";
+import { z } from "zod";
+import packageJSON from "./package.json" with { type: "json" };
 import ResearchService from "./ResearchService.ts";
-import {ResearchServiceConfigSchema} from "./schema.ts";
+import { ResearchServiceConfigSchema } from "./schema.ts";
 
 import tools from "./tools.ts";
 
@@ -19,27 +19,16 @@ export default {
   version: packageJSON.version,
   description: packageJSON.description,
   install(app, config) {
-    app.services.waitForItemByType(
-      ScriptingService,
-      (scriptingService: ScriptingService) => {
-        scriptingService.registerFunction("research", {
-          type: "native",
-          params: ["topic", "prompt"],
-          async execute(
-            this: ScriptingThis,
-            topic: string,
-            prompt: string,
-          ): Promise<string> {
-            return await this.agent
-              .requireServiceByType(ResearchService)
-              .runResearch(topic, prompt, this.agent);
-          },
-        });
-      },
-    );
-    app.waitForService(ChatService, (chatService) =>
-      chatService.addTools(...tools),
-    );
+    app.services.waitForItemByType(ScriptingService, (scriptingService: ScriptingService) => {
+      scriptingService.registerFunction("research", {
+        type: "native",
+        params: ["topic", "prompt"],
+        async execute(this: ScriptingThis, topic: string, prompt: string): Promise<string> {
+          return await this.agent.requireServiceByType(ResearchService).runResearch(topic, prompt, this.agent);
+        },
+      });
+    });
+    app.waitForService(ChatService, chatService => chatService.addTools(...tools));
     app.addServices(new ResearchService(config.research));
   },
   config: packageConfigSchema,

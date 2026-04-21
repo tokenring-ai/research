@@ -1,1 +1,1 @@
-export {default as ResearchService} from "./ResearchService.ts";
+export { default as ResearchService } from "./ResearchService.ts";
