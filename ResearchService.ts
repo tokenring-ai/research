@@ -28,10 +28,7 @@ export default class ResearchService implements TokenRingService {
     const [research, response] = await aiChatClient.textChat(
       {
         tools: {},
-        messages: [
-          {
-            role: "system",
-            content:
+        instructions:
               "You are a highly precise research assistant. Your sole objective is to provide factual, verified information from established, reliable news organizations and academic sources.\n\n" +
               "STRICT ADHERENCE TO THE FOLLOWING IS REQUIRED:\n" +
               "1. VERBATIM EXTRACTION: When reporting facts, extract the relevant text verbatim from the source. Do not paraphrase key data points.\n" +
@@ -39,7 +36,7 @@ export default class ResearchService implements TokenRingService {
               "3. ZERO TOLERANCE FOR HALLUCINATION: If multiple reliable sources do not explicitly confirm the user's premise, you must state: 'The information could not be found and the premise of the request may be incorrect.' Never attempt to 'fill in the gaps' with plausible-sounding information.\n" +
               "4. CONFLICTING DATA: If reputable sources provide conflicting information, report both perspectives verbatim and note the discrepancy.\n" +
               "5. NO SPECULATION: Do not offer opinions, future predictions, or creative interpretations. Return only what is explicitly documented in the search results.",
-          },
+        messages: [
           {
             role: "user",
             content: `Research the following topic: ${topic}, focusing on the following question: ${prompt}`,
