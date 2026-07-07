@@ -1,5 +1,6 @@
 import type { Agent } from "@tokenring-ai/agent";
 import type { TokenRingToolDefinition, TokenRingToolResult } from "@tokenring-ai/chat/schema";
+import { ToolCallError } from "@tokenring-ai/chat/util/tokenRingTool";
 import { z } from "zod";
 import ResearchService from "../ResearchService.js";
 
@@ -32,11 +33,11 @@ async function execute({ topic, prompt }: z.output<typeof inputSchema>, agent: A
   const researchService = agent.requireServiceByType(ResearchService);
 
   if (!topic) {
-    throw new Error(`[${name}] Error: Topic is required`);
+    throw new ToolCallError(name, `Error: Topic is required`);
   }
 
   if (!prompt) {
-    throw new Error(`[${name}] Error: Prompt is required`);
+    throw new ToolCallError(name, `Error: Prompt is required`);
   }
 
   const research = await researchService.runResearch(topic, prompt, agent);
