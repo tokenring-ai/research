@@ -1,11 +1,7 @@
 import type { Agent } from "@tokenring-ai/agent";
 import { ChatModelRegistry } from "@tokenring-ai/ai-client/ModelRegistry";
 import type { TokenRingService } from "@tokenring-ai/app/types";
-import { getChatAnalytics } from "@tokenring-ai/chat/util/getChatAnalytics";
-import markdownList from "@tokenring-ai/utility/string/markdownList";
 import type { ResearchServiceConfig } from "./schema.ts";
-
-const name = "research_run";
 
 /**
  * The actual implementation of GhostIOService
@@ -25,7 +21,7 @@ export default class ResearchService implements TokenRingService {
     agent.infoMessage(`[Research] Dispatching research request for "${topic}" to ${aiChatClient.getModelId()}`);
 
     // Generate research using Gemini
-    const [research, response] = await aiChatClient.textChat(
+    const [research, _response] = await aiChatClient.textChat(
       {
         tools: {},
         instructions:
@@ -45,15 +41,6 @@ export default class ResearchService implements TokenRingService {
       },
       agent,
     );
-
-    agent.artifactOutput({
-      name: `Research on ${topic}`,
-      encoding: "text",
-      mimeType: "text/markdown",
-      body: `Topic: ${topic}\nPrompt: ${prompt}\n\nResult: ${research}`,
-    });
-
-    agent.infoMessage(`[${name}] Successfully generated research on "${topic}"\n\n${markdownList(getChatAnalytics(response))}`);
 
     return research;
   }
