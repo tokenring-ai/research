@@ -1,128 +1,135 @@
 # @tokenring-ai/research
 
-**Version:** 0.2.0
+Deep research orchestration for TokenRing: spawn research agents, pin their working directory, and kick off multi-file research workflows.
 
 ## Overview
 
-LLM-driven tools for systematic data gathering and deep analysis. This package
-provides AI-powered research capabilities using web-search-enabled models,
-integrating with the Token Ring agent, chat, and scripting systems to dispatch
-research requests and return comprehensive research content with strict
-adherence to factual accuracy and source citation.
+This package does **not** define agent prompts or tools for web search itself. It orchestrates the **deep research** agent configured by the application and exposes service, RPC, chat-tool, and scripting entry points.
 
-### Key Features
+| Surface | Role |
+|---------|------|
+| **ResearchService** | Creates `research` agents under `researchDirectory`, applies the filesystem working directory, starts `/deep research` |
+| **RPC** (`/rpc/research`) | Powers the Research web app: start runs, read config, list past project folders |
+| **Tool** `research_run` | Starts a deep research agent asynchronously; returns agent id + directory |
+| **Scripting** `research(topic, prompt)` | Same as `startResearch`; returns JSON `{ agentId, researchDirectory }` |
 
-- AI-powered research with web search capabilities
-- Integration with Token Ring agent framework
-- Tool-based interaction with agents (`research_run`)
-- Scripting function for programmatic research (`research`)
-- Artifact output generation for research results
-- Strict adherence to factual accuracy and source citation
-- Zero tolerance for hallucination with verbatim extraction
-- Analytics tracking for research execution
+Agent behavior (system prompts, enabled tools, slash commands) lives in app config:
 
-## Features
+| Agent | Config | Command |
+|-------|--------|---------|
+| Deep Research (`research`) | `app/one/config/agents/coding/research.yaml` | `/deep research` |
+| Search Agent (`search-agent`) | `app/one/config/agents/coding/search-agent.yaml` | `/search agent` |
 
-- **AI-Powered Research**: Leverages advanced AI models with web search
-  capabilities
-- **Tool Integration**: Provides `research_run` tool for agent-based research
-- **Scripting Support**: Exposes `research` function for programmatic usage
-- **Artifact Output**: Automatically generates markdown artifacts for research
-  results
-- **Strict Factual Accuracy**: Enforces verbatim extraction and source citation
-- **Analytics**: Tracks research execution metrics through chat service
-- **Configurable Models**: Supports any AI model that provides web search
-  functionality
+Search Agent is a lighter, chat-only verified web report. Deep Research writes a dossier on disk (`SUMMARY.md`, `TOC.md`, topic deep-dives) using web search, todos, and filesystem tools.
 
-## Chat Commands
+## Installation
 
-This package does not define any chat commands. Research functionality is
-accessed through tools and scripting functions.
-
-## Tools
-
-The package provides one agent tool that integrates with the TokenRing chat
-system:
-
-### research_run
-
-Dispatches a research request to an AI Research Agent and returns the generated
-research content.
-
-| Tool           | Display Name      | Description                                        |
-|----------------|-------------------|----------------------------------------------------|
-| `research_run` | Research/research | Dispatches a research request to an AI agent, and  |
-|                |                   | returns the generated research content.            |
-
-**Input Parameters:**
-
-| Parameter | Type   | Required | Description                                         |
-|-----------|--------|----------|-----------------------------------------------------|
-| `topic`   | string | Yes      | The main topic or subject to research               |
-| `prompt`  | string | Yes      | The detailed research prompt or specific questions  |
-|           |        |          | to investigate about the topic                      |
-
-**Return Type:**
-
-The tool returns a `TokenRingToolResult` with a JSON string containing:
-
-```typescript
-interface ResearchSuccessResult {
-  status: "completed";
-  topic: string;
-  research: string;
-  message: string;
-}
-
-interface ResearchErrorResult {
-  status: "error";
-  topic: string;
-  error: string;
-  message: string;
-}
-
-type ResearchResult = ResearchSuccessResult | ResearchErrorResult;
+```bash
+bun add @tokenring-ai/research
 ```
 
-**Features:**
-
-- Uses configured research model with web search capabilities
-- Generates comprehensive research content with strict factual accuracy
-- Creates artifact output for research results in markdown format
-- Provides detailed analytics on research execution
-- Enforces source citation and verbatim extraction from reliable sources
+Typically installed as part of TokenRing One (`@tokenring-ai/one`).
 
 ## Configuration
 
-The research package supports configuration through the Token Ring application
-config system. The package defines a nested `research` configuration key.
-
-### ENV Variables
-
-This package does not define any environment variables. Configuration is done
-through the plugin configuration object.
-
-### Configuration Options
-
-| Option          | Type   | Default            | Description                                         |
-|-----------------|--------|--------------------|-----------------------------------------------------|
-| `researchModel` | string | `auto?websearch`   | The AI model name for research (must support web    |
-|                 |        |                    | search)                                             |
-
-### Configuration Example
-
-```yaml
-research:
-  researchModel: "auto?websearch"
+```ts
+research: {
+  // Absolute path, or relative to the project directory
+  researchDirectory: ".tokenring/research",
+}
 ```
 
-Or with a specific model:
+| Key | Default | Description |
+|-----|---------|-------------|
+| `researchDirectory` | `.tokenring/research` | Root directory for research project folders |
 
-```yaml
-research:
-  researchModel: "gemini-2.5-flash-web-search"
+TokenRing One defaults this to `<dataDirectory>/research` (usually `<project>/.tokenring/research`).
+
+## Flow
+
+1. **`startResearch(query)`** ensures `researchDirectory` exists (`mkdir -p`).
+2. Spawns an agent of type **`research`**.
+3. Sets that agent’s filesystem **working directory** to the research root (`FileSystemState`).
+4. Sends **`/deep research <query>`** as agent input.
+5. With **`requireNewAgent: false`** (default on the command), steps run **in place** on that research agent (foreground chat), not as a nested subagent.
+
+From a different agent type (for example `code`), `/deep research …` spawns a **background** research agent instead.
+
+## ResearchService API
+
+```ts
+import ResearchService from "@tokenring-ai/research/ResearchService";
+
+// startResearch(query, { headless? }) → { agentId, researchDirectory }
+// resolveResearchDirectory() → string
+// ensureResearchDirectory() → string
+// listResearchProjects() → { name, path, modifiedAt }[]
+// applyWorkingDirectory(agent) — pin FileSystemState.workingDirectory
+// attach(agent) — auto-applies research directory for agentType === "research"
 ```
 
-## License
+### `startResearch`
 
-MIT License - see LICENSE file for details.
+```ts
+const { agentId, researchDirectory } = researchService.startResearch(
+  "Solid-state battery commercialization 2024-2026",
+  { headless: false },
+);
+```
+
+Throws if the query is empty after trim.
+
+### `listResearchProjects`
+
+Returns immediate subdirectories of the research root (skips hidden names), sorted by modification time descending. Each completed deep-research run is expected to create its own project subdirectory under the root.
+
+## RPC
+
+Path: `/rpc/research`
+
+| Method | Type | Input | Result |
+|--------|------|-------|--------|
+| `startResearch` | mutation | `{ query, headless? }` | `{ agentId, researchDirectory }` |
+| `getResearchConfig` | query | `{}` | `{ researchDirectory }` (resolved absolute path) |
+| `listResearchProjects` | query | `{}` | `{ projects: [{ name, path, modifiedAt }] }` |
+
+## Tools
+
+| Name | Display name | Description |
+|------|--------------|-------------|
+| `research_run` | Research/deep research | Starts deep research; returns JSON with `status: "started"`, `agentId`, `researchDirectory` |
+
+**Input**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `topic` | string | yes | Main topic |
+| `prompt` | string | yes | Detailed questions / focus (combined with topic into the query) |
+
+Non-blocking: the tool returns as soon as the agent is created and `/deep research` is queued.
+
+## Scripting
+
+```ts
+// Native function registered as `research`
+research(topic, prompt) // → JSON string of StartResearchResult
+```
+
+## Research app (frontend)
+
+The One web UI **Research** app (`/research`) calls `startResearch`, navigates to the new agent’s chat, and lists past project folders from `listResearchProjects`.
+
+## Dependencies
+
+- `@tokenring-ai/agent` — AgentManager, spawn, handleInput
+- `@tokenring-ai/app` — plugin / service lifecycle
+- `@tokenring-ai/chat` — tool registration
+- `@tokenring-ai/filesystem` — `FileSystemState` working directory
+- `@tokenring-ai/rpc` — Research RPC endpoint
+- `@tokenring-ai/scripting` — `research()` function
+- `zod` — config schema
+
+## Related documentation
+
+- Plugin docs: [Research plugin](../../docs/docs/plugins/research.md) (site: `/docs/plugins/research`)
+- Agents: [Deep Research](../../docs/docs/agents/deep-research.md), [Search Agent](../../docs/docs/agents/search.md)

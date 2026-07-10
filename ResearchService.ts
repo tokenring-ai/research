@@ -1,47 +1,134 @@
+import fs from "node:fs";
+import path from "node:path";
 import type { Agent } from "@tokenring-ai/agent";
-import { ChatModelRegistry } from "@tokenring-ai/ai-client/ModelRegistry";
+import AgentManager from "@tokenring-ai/agent/services/AgentManager";
+import type { AgentCreationContext } from "@tokenring-ai/agent/types";
+import type TokenRingApp from "@tokenring-ai/app";
 import type { TokenRingService } from "@tokenring-ai/app/types";
+import { FileSystemState } from "@tokenring-ai/filesystem/state/fileSystemState";
 import type { ResearchServiceConfig } from "./schema.ts";
 
+export type StartResearchOptions = {
+  headless?: boolean;
+};
+
+export type StartResearchResult = {
+  agentId: string;
+  researchDirectory: string;
+};
+
+export type ResearchProjectSummary = {
+  name: string;
+  path: string;
+  modifiedAt: number;
+};
+
 /**
- * The actual implementation of GhostIOService
+ * Orchestrates deep research agents: working directory, spawn, and kickoff.
  */
 export default class ResearchService implements TokenRingService {
   readonly name = "ResearchService";
-  description = "Provides Research functionality";
+  description = "Creates research agents and runs deep research workflows";
 
-  constructor(private options: ResearchServiceConfig) {}
+  private projectDirectory: string;
 
-  async runResearch(topic: string, prompt: string, agent: Agent): Promise<string> {
-    const chatModelRegistry = agent.requireServiceByType(ChatModelRegistry);
+  constructor(
+    private app: TokenRingApp,
+    private options: ResearchServiceConfig,
+    projectDirectory?: string,
+  ) {
+    this.projectDirectory = projectDirectory ?? process.cwd();
+  }
 
-    // Get Gemini client from model registry
-    const aiChatClient = chatModelRegistry.getClient(this.options.researchModel);
+  /**
+   * Resolve the configured research directory to an absolute path.
+   */
+  resolveResearchDirectory(): string {
+    const configured = this.options.researchDirectory;
+    if (path.isAbsolute(configured)) {
+      return path.normalize(configured);
+    }
+    return path.resolve(this.projectDirectory, configured);
+  }
 
-    agent.infoMessage(`[Research] Dispatching research request for "${topic}" to ${aiChatClient.getModelId()}`);
+  /**
+   * Ensure the research root directory exists on disk.
+   */
+  ensureResearchDirectory(): string {
+    const dir = this.resolveResearchDirectory();
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  }
 
-    // Generate research using Gemini
-    const [research, _response] = await aiChatClient.textChat(
-      {
-        tools: {},
-        instructions:
-          "You are a highly precise research assistant. Your sole objective is to provide factual, verified information from established, reliable news organizations and academic sources.\n\n" +
-          "STRICT ADHERENCE TO THE FOLLOWING IS REQUIRED:\n" +
-          "1. VERBATIM EXTRACTION: When reporting facts, extract the relevant text verbatim from the source. Do not paraphrase key data points.\n" +
-          "2. SOURCE CITATION: Every claim must be accompanied by a specific URL or named reputable source. If you cannot cite it, you cannot include it.\n" +
-          "3. ZERO TOLERANCE FOR HALLUCINATION: If multiple reliable sources do not explicitly confirm the user's premise, you must state: 'The information could not be found and the premise of the request may be incorrect.' Never attempt to 'fill in the gaps' with plausible-sounding information.\n" +
-          "4. CONFLICTING DATA: If reputable sources provide conflicting information, report both perspectives verbatim and note the discrepancy.\n" +
-          "5. NO SPECULATION: Do not offer opinions, future predictions, or creative interpretations. Return only what is explicitly documented in the search results.",
-        messages: [
-          {
-            role: "user",
-            content: `Research the following topic: ${topic}, focusing on the following question: ${prompt}`,
-          },
-        ],
-      },
-      agent,
-    );
+  /**
+   * Point an agent's filesystem working directory at the research root.
+   */
+  applyWorkingDirectory(agent: Agent): void {
+    const researchDirectory = this.ensureResearchDirectory();
+    agent.mutateState(FileSystemState, state => {
+      state.workingDirectory = researchDirectory;
+    });
+  }
 
-    return research;
+  attach(agent: Agent, _creationContext: AgentCreationContext): void {
+    if (agent.config.agentType === "research") {
+      this.applyWorkingDirectory(agent);
+    }
+  }
+
+  /**
+   * Spawn a research agent under the research directory and start `/deep research`.
+   */
+  startResearch(query: string, options: StartResearchOptions = {}): StartResearchResult {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      throw new Error("Research query must not be empty");
+    }
+
+    const researchDirectory = this.ensureResearchDirectory();
+    const agentManager = this.app.requireService(AgentManager);
+    const agent = agentManager.spawnAgent({
+      agentType: "research",
+      headless: options.headless ?? false,
+    });
+
+    // attach() already applies the directory for research agents; re-apply for safety.
+    this.applyWorkingDirectory(agent);
+
+    agent.handleInput({
+      from: "Research",
+      message: `/deep research ${trimmed}`,
+    });
+
+    return {
+      agentId: agent.id,
+      researchDirectory,
+    };
+  }
+
+  /**
+   * List immediate subdirectories of the research root (past research projects).
+   */
+  listResearchProjects(): ResearchProjectSummary[] {
+    const root = this.resolveResearchDirectory();
+    if (!fs.existsSync(root)) {
+      return [];
+    }
+
+    const entries = fs.readdirSync(root, { withFileTypes: true });
+    const projects: ResearchProjectSummary[] = [];
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+      const fullPath = path.join(root, entry.name);
+      const stat = fs.statSync(fullPath);
+      projects.push({
+        name: entry.name,
+        path: fullPath,
+        modifiedAt: stat.mtimeMs,
+      });
+    }
+
+    return projects.sort((a, b) => b.modifiedAt - a.modifiedAt);
   }
 }

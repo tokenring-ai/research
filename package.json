@@ -1,15 +1,16 @@
 {
   "name": "@tokenring-ai/research",
   "version": "0.2.0",
-  "description": "LLM-driven tools for systematic data gathering and deep analysis.",
+  "description": "Deep research agents that write multi-file markdown dossiers using web search, todos, and filesystem tools.",
   "dependencies": {
-    "@tokenring-ai/app": "workspace:*",
-    "@tokenring-ai/ai-client": "workspace:*",
-    "zod": "^4.4.3",
-    "@tokenring-ai/chat": "workspace:*",
     "@tokenring-ai/agent": "workspace:*",
+    "@tokenring-ai/app": "workspace:*",
+    "@tokenring-ai/chat": "workspace:*",
+    "@tokenring-ai/filesystem": "workspace:*",
+    "@tokenring-ai/rpc": "workspace:*",
     "@tokenring-ai/scripting": "workspace:*",
-    "@tokenring-ai/utility": "workspace:*"
+    "@tokenring-ai/utility": "workspace:*",
+    "zod": "^4.4.3"
   },
   "exports": {
     ".": "./index.ts",

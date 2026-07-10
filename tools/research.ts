@@ -3,51 +3,31 @@ import type { TokenRingToolDefinition, TokenRingToolResult } from "@tokenring-ai
 import { z } from "zod";
 import ResearchService from "../ResearchService.js";
 
-export interface ResearchSuccessResult {
-  status: "completed";
-  topic: string;
-  research: string;
-  message: string;
-}
-
-export interface ResearchErrorResult {
-  status: "error";
-  topic: string;
-  error: string;
-  message: string;
-}
-
-export type ResearchResult = ResearchSuccessResult | ResearchErrorResult;
-
 const name = "research_run";
-const displayName = "Research/research";
+const displayName = "Research/deep research";
 
 /**
- * Dispatches a research request to an AI Research Agent and returns the generated research
- * @param args
- * @param agent
- * @returns Result containing the generated research
+ * Starts a deep research agent for the given topic/prompt (non-blocking).
  */
 async function execute({ topic, prompt }: z.output<typeof inputSchema>, agent: Agent): Promise<TokenRingToolResult> {
   const researchService = agent.requireServiceByType(ResearchService);
-
-  const research = await researchService.runResearch(topic, prompt, agent);
+  const query = prompt.trim() ? `${topic.trim()}: ${prompt.trim()}` : topic.trim();
+  const { agentId, researchDirectory } = researchService.startResearch(query, { headless: agent.headless });
 
   return {
-    summary: `Research completed for topic: ${topic}`,
-    result: JSON.stringify({ status: "completed", topic, research, message: `Research completed successfully for topic: ${topic}` }),
-    attachments: [
-      {
-        name: `Research on ${topic}`,
-        encoding: "text",
-        mimeType: "text/markdown",
-        body: `Topic: ${topic}\nPrompt: ${prompt}\n\nResult: ${research}`,
-      },
-    ],
+    summary: `Deep research started for: ${topic}`,
+    result: JSON.stringify({
+      status: "started",
+      topic,
+      agentId,
+      researchDirectory,
+      message: `Deep research agent ${agentId} started. Output will be written under ${researchDirectory}.`,
+    }),
   };
 }
 
-const description = "Dispatches a research request to an AI agent, and returns the generated research content.";
+const description =
+  "Starts a deep multi-file research agent on a topic. Returns the agent id and research directory; the agent writes SUMMARY.md, TOC.md, and topic files asynchronously.";
 
 const inputSchema = z.object({
   topic: z.string().describe("The main topic or subject to research"),
