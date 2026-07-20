@@ -17,8 +17,8 @@ Agent behavior (system prompts, enabled tools, slash commands) lives in app conf
 
 | Agent | Config | Command |
 |-------|--------|---------|
-| Deep Research (`research`) | `app/one/config/agents/coding/research.yaml` | `/deep research` |
-| Search Agent (`search-agent`) | `app/one/config/agents/coding/search-agent.yaml` | `/search agent` |
+| Deep Research (`research`) | `backend/config/agents/coding/research.yaml` | `/deep research` |
+| Search Agent (`search-agent`) | `backend/config/agents/coding/search-agent.yaml` | `/search agent` |
 
 Search Agent is a lighter, chat-only verified web report. Deep Research writes a dossier on disk (`SUMMARY.md`, `TOC.md`, topic deep-dives) using web search, todos, and filesystem tools.
 
