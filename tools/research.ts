@@ -15,7 +15,7 @@ async function execute({ topic, prompt }: z.output<typeof inputSchema>, agent: A
   const { agentId, researchDirectory } = researchService.startResearch(query, { headless: agent.headless });
 
   return {
-    summary: `Deep research started for: ${topic}`,
+    message: `**Research** Conducted research on ${topic}`,
     result: JSON.stringify({
       status: "started",
       topic,
