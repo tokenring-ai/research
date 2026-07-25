@@ -1,40 +1,102 @@
 import type { RPCSchema } from "@tokenring-ai/rpc/types";
 import { z } from "zod";
+import { ItemSchema, ItemSummarySchema, TopicSummarySchema } from "../schema.ts";
 
 export default {
   name: "Research RPC",
   path: "/rpc/research",
   methods: {
-    startResearch: {
+    listTopics: {
+      type: "query",
+      input: z.object({}),
+      result: z.object({
+        topics: z.array(TopicSummarySchema),
+      }),
+    },
+    streamTopics: {
+      type: "stream",
+      input: z.object({}),
+      result: z.object({
+        topics: z.array(TopicSummarySchema),
+      }),
+    },
+    createTopic: {
       type: "mutation",
       input: z.object({
-        query: z.string().min(1),
-        headless: z.boolean().exactOptional(),
+        name: z.string(),
       }),
       result: z.object({
-        agentId: z.string(),
-        researchDirectory: z.string(),
+        topic: TopicSummarySchema,
       }),
     },
-    getResearchConfig: {
-      type: "query",
-      input: z.object({}),
+    deleteTopic: {
+      type: "mutation",
+      input: z.object({
+        name: z.string(),
+      }),
       result: z.object({
-        researchDirectory: z.string(),
+        success: z.boolean(),
       }),
     },
-    listResearchProjects: {
+    listItems: {
       type: "query",
-      input: z.object({}),
+      input: z.object({
+        topicName: z.string(),
+      }),
       result: z.object({
-        projects: z.array(
-          z.object({
-            name: z.string(),
-            path: z.string(),
-            modifiedAt: z.number(),
-          }),
-        ),
+        items: z.array(ItemSummarySchema),
+      }),
+    },
+    streamItems: {
+      type: "stream",
+      input: z.object({
+        topicName: z.string(),
+      }),
+      result: z.object({
+        items: z.array(ItemSummarySchema),
+      }),
+    },
+    getItem: {
+      type: "query",
+      input: z.object({
+        topicName: z.string(),
+        name: z.string(),
+      }),
+      result: z.object({
+        item: ItemSchema.nullable(),
+      }),
+    },
+    createItem: {
+      type: "mutation",
+      input: z.object({
+        topicName: z.string(),
+        name: z.string(),
+        content: z.string().default(""),
+      }),
+      result: z.object({
+        item: ItemSchema,
+      }),
+    },
+    updateItem: {
+      type: "mutation",
+      input: z.object({
+        topicName: z.string(),
+        name: z.string(),
+        content: z.string(),
+      }),
+      result: z.object({
+        item: ItemSchema,
+      }),
+    },
+    deleteItem: {
+      type: "mutation",
+      input: z.object({
+        topicName: z.string(),
+        name: z.string(),
+      }),
+      result: z.object({
+        success: z.boolean(),
       }),
     },
   },
-} as const satisfies RPCSchema;
+} satisfies RPCSchema;

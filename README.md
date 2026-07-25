@@ -1,26 +1,24 @@
 # @tokenring-ai/research
 
-Deep research orchestration for TokenRing: spawn research agents, pin their working directory, and kick off multi-file research workflows.
+Topic-based research dossiers backed by markdown files on disk.
 
 ## Overview
 
-This package does **not** define agent prompts or tools for web search itself. It orchestrates the **deep research** agent configured by the application and exposes service, RPC, chat-tool, and scripting entry points.
+The `@tokenring-ai/research` package provides a simple two-level document store for research notes, using a topic/item layout:
 
-| Surface | Role |
-|---------|------|
-| **ResearchService** | Creates `research` agents under `researchDirectory`, applies the filesystem working directory, starts `/deep research` |
-| **RPC** (`/rpc/research`) | Powers the Research web app: start runs, read config, list past project folders |
-| **Tool** `research_run` | Starts a deep research agent asynchronously; returns agent id + directory |
-| **Scripting** `research(topic, prompt)` | Same as `startResearch`; returns JSON `{ agentId, researchDirectory }` |
+- An **Item** is a single markdown file — one research note, summary, or deep-dive.
+- A **Topic** is a named collection of related Items (e.g. a research project or subject area).
 
-Agent behavior (system prompts, enabled tools, slash commands) lives in app config:
+Items are typically written by research agents and organized into Topics, and viewed/edited directly by users in the Research app.
 
-| Agent | Config | Command |
-|-------|--------|---------|
-| Deep Research (`research`) | `backend/config/agents/coding/research.yaml` | `/deep research` |
-| Search Agent (`search-agent`) | `backend/config/agents/coding/search-agent.yaml` | `/search agent` |
+## Key Features
 
-Search Agent is a lighter, chat-only verified web report. Deep Research writes a dossier on disk (`SUMMARY.md`, `TOC.md`, topic deep-dives) using web search, todos, and filesystem tools.
+- **Topics & Items**: Items are grouped into named Topics, stored as `<researchDirectory>/<topic>/<item>.md`
+- **Shared or Per-Agent Directory**: One configured root directory by default, with optional per-agent overrides
+- **CRUD via RPC**: List, create, retrieve, update, and delete topics and items from the frontend
+- **CRUD via Tools**: Agents can list, read, write, and delete topics and items while doing research
+- **Live List Updates**: `streamTopics` / `streamItems` poll the directory so the frontend list stays current
+- **Auto-vivified Topics**: Writing an item to a topic that doesn't exist yet creates the topic automatically
 
 ## Installation
 
@@ -28,108 +26,84 @@ Search Agent is a lighter, chat-only verified web report. Deep Research writes a
 bun add @tokenring-ai/research
 ```
 
-Typically installed as part of TokenRing One (`@tokenring-ai/one`).
+## Plugin Configuration
 
-## Configuration
+Configure the research plugin in your application config:
 
-```ts
-research: {
-  // Absolute path, or relative to the project directory
-  researchDirectory: ".tokenring/research",
-}
+```yaml
+research:
+  agentDefaults:
+    researchDirectory: ./.tokenring/research
 ```
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `researchDirectory` | `.tokenring/research` | Root directory for research project folders |
+### Configuration Schema
 
-TokenRing One defaults this to `<dataDirectory>/research` (usually `<project>/.tokenring/research`).
+```typescript
+import { ResearchServiceConfigSchema } from "@tokenring-ai/research";
 
-## Flow
-
-1. **`startResearch(query)`** ensures `researchDirectory` exists (`mkdir -p`).
-2. Spawns an agent of type **`research`**.
-3. Sets that agent’s filesystem **working directory** to the research root (`FileSystemState`).
-4. Sends **`/deep research <query>`** as agent input.
-5. With **`requireNewAgent: false`** (default on the command), steps run **in place** on that research agent (foreground chat), not as a nested subagent.
-
-From a different agent type (for example `code`), `/deep research …` spawns a **background** research agent instead.
-
-## ResearchService API
-
-```ts
-import ResearchService from "@tokenring-ai/research/ResearchService";
-
-// startResearch(query, { headless? }) → { agentId, researchDirectory }
-// resolveResearchDirectory() → string
-// ensureResearchDirectory() → string
-// listResearchProjects() → { name, path, modifiedAt }[]
-// applyWorkingDirectory(agent) — pin FileSystemState.workingDirectory
-// attach(agent) — auto-applies research directory for agentType === "research"
+ResearchServiceConfigSchema = z.object({
+  agentDefaults: z.object({
+    researchDirectory: z.string(),
+  }),
+});
 ```
 
-### `startResearch`
+**Configuration Options:**
 
-```ts
-const { agentId, researchDirectory } = researchService.startResearch(
-  "Solid-state battery commercialization 2024-2026",
-  { headless: false },
-);
-```
+| Field                              | Type     | Required | Description                           |
+|------------------------------------|----------|----------|---------------------------------------|
+| `agentDefaults.researchDirectory`  | `string` | Yes      | Directory where research topics are stored |
 
-Throws if the query is empty after trim.
+Agents may override `researchDirectory` via their own `research.researchDirectory` agent config slice.
 
-### `listResearchProjects`
+## Naming
 
-Returns immediate subdirectories of the research root (skips hidden names), sorted by modification time descending. Each completed deep-research run is expected to create its own project subdirectory under the root.
-
-## RPC
-
-Path: `/rpc/research`
-
-| Method | Type | Input | Result |
-|--------|------|-------|--------|
-| `startResearch` | mutation | `{ query, headless? }` | `{ agentId, researchDirectory }` |
-| `getResearchConfig` | query | `{}` | `{ researchDirectory }` (resolved absolute path) |
-| `listResearchProjects` | query | `{}` | `{ projects: [{ name, path, modifiedAt }] }` |
+Topic and item names must start with a letter or number and may only contain letters, numbers, hyphens, and
+underscores (`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`). An item named `summary` in a topic named `solid-state-batteries` is stored at
+`solid-state-batteries/summary.md` in the research directory.
 
 ## Tools
 
-| Name | Display name | Description |
-|------|--------------|-------------|
-| `research_run` | Research/deep research | Starts deep research; returns JSON with `status: "started"`, `agentId`, `researchDirectory` |
+| Tool           | Display Name               | Description                                                   |
+|----------------|----------------------------|---------------------------------------------------------------|
+| `topic_list`   | `Research/list topics`     | List the research topics in the research directory            |
+| `topic_create` | `Research/create topic`    | Create a new, empty research topic                            |
+| `topic_delete` | `Research/delete topic`    | Delete a research topic and all of its items                  |
+| `item_list`    | `Research/list items`      | List the items within a topic                                 |
+| `item_read`    | `Research/read item`       | Read the markdown content of an item                          |
+| `item_write`   | `Research/write item`      | Create or overwrite an item (auto-creates its topic)          |
+| `item_delete`  | `Research/delete item`     | Delete an item                                                |
 
-**Input**
+## Service API
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `topic` | string | yes | Main topic |
-| `prompt` | string | yes | Detailed questions / focus (combined with topic into the query) |
+### ResearchService
 
-Non-blocking: the tool returns as soon as the agent is created and `/deep research` is queued.
+```typescript
+import { ResearchService } from "@tokenring-ai/research";
 
-## Scripting
-
-```ts
-// Native function registered as `research`
-research(topic, prompt) // → JSON string of StartResearchResult
+const researchService = agent.requireServiceByType(ResearchService);
 ```
 
-## Research app (frontend)
+| Method | Description |
+|--------|-------------|
+| `getDefaultResearchDirectory()` | Return the application default research directory |
+| `getResearchDirectory(agent)` | Return the active agent's research directory |
+| `listTopics(root)` | List topic summaries (`name`, `itemCount`, `updatedAt`) |
+| `createTopic(root, topicName)` | Create a new, empty topic; throws if the name is already in use |
+| `deleteTopic(root, topicName)` | Delete a topic and all of its items; returns `false` if it didn't exist |
+| `listItems(root, topicName)` | List item summaries (`topicName`, `name`, `size`, `updatedAt`) within a topic |
+| `getItem(root, topicName, name)` | Read an item's content, or `null` if it doesn't exist |
+| `createItem(root, topicName, name, content)` | Create a new item, auto-creating its topic; throws if the name is already in use |
+| `updateItem(root, topicName, name, content)` | Create or overwrite an item, auto-creating its topic |
+| `deleteItem(root, topicName, name)` | Delete an item; returns `false` if it didn't exist |
 
-The One web UI **Research** app (`/research`) calls `startResearch`, navigates to the new agent’s chat, and lists past project folders from `listResearchProjects`.
+## RPC
 
-## Dependencies
+The plugin registers a `Research RPC` endpoint at `/rpc/research` with `listTopics`, `streamTopics`, `createTopic`,
+`deleteTopic`, `listItems`, `streamItems`, `getItem`, `createItem`, `updateItem`, and `deleteItem`
+methods, used by the Research app in the frontend.
 
-- `@tokenring-ai/agent` — AgentManager, spawn, handleInput
-- `@tokenring-ai/app` — plugin / service lifecycle
-- `@tokenring-ai/chat` — tool registration
-- `@tokenring-ai/filesystem` — `FileSystemState` working directory
-- `@tokenring-ai/rpc` — Research RPC endpoint
-- `@tokenring-ai/scripting` — `research()` function
-- `zod` — config schema
+## Related Packages
 
-## Related documentation
-
-- Plugin docs: [Research plugin](../../docs/docs/plugins/research.md) (site: `/docs/plugins/research`)
-- Agents: [Deep Research](../../docs/docs/agents/deep-research.md), [Search Agent](../../docs/docs/agents/search.md)
+- `@tokenring-ai/web-design` - Figma-style design flows and HTML designs
+- `@tokenring-ai/websearch` - Web search tools used by research agents

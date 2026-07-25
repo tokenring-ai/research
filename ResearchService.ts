@@ -1,134 +1,174 @@
-import fs from "node:fs";
+import type { Dirent } from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
-import type { Agent } from "@tokenring-ai/agent";
-import AgentManager from "@tokenring-ai/agent/services/AgentManager";
+import type Agent from "@tokenring-ai/agent/Agent";
 import type { AgentCreationContext } from "@tokenring-ai/agent/types";
-import type TokenRingApp from "@tokenring-ai/app";
 import type { TokenRingService } from "@tokenring-ai/app/types";
-import { FileSystemState } from "@tokenring-ai/filesystem/state/fileSystemState";
-import type { ResearchServiceConfig } from "./schema.ts";
+import deepClone from "@tokenring-ai/utility/object/deepClone";
+import { type Item, type ItemSummary, type ParsedResearchConfig, ResearchAgentConfigSchema, type TopicSummary } from "./schema.ts";
+import { ResearchState } from "./state/ResearchState.ts";
 
-export type StartResearchOptions = {
-  headless?: boolean;
-};
+const NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/;
+const EXTENSION = ".md";
 
-export type StartResearchResult = {
-  agentId: string;
-  researchDirectory: string;
-};
+function assertValidName(name: string, kind: "topic" | "item"): void {
+  if (!NAME_PATTERN.test(name)) {
+    throw new Error(
+      `Invalid ${kind} name "${name}". Names must start with a letter or number and may only contain letters, numbers, hyphens, and underscores.`,
+    );
+  }
+}
 
-export type ResearchProjectSummary = {
-  name: string;
-  path: string;
-  modifiedAt: number;
-};
+async function pathExists(target: string): Promise<boolean> {
+  return fs
+    .access(target)
+    .then(() => true)
+    .catch(() => false);
+}
 
 /**
- * Orchestrates deep research agents: working directory, spawn, and kickoff.
+ * Manages research topics and markdown items on disk under a research directory.
+ *
+ * Layout: `<researchDirectory>/<topic>/<item>.md`
  */
 export default class ResearchService implements TokenRingService {
   readonly name = "ResearchService";
-  description = "Creates research agents and runs deep research workflows";
+  description = "Research topics and markdown items, backed by files on disk";
 
-  private projectDirectory: string;
+  constructor(private options: ParsedResearchConfig) {}
 
-  constructor(
-    private app: TokenRingApp,
-    private options: ResearchServiceConfig,
-    projectDirectory?: string,
-  ) {
-    this.projectDirectory = projectDirectory ?? process.cwd();
+  attach(agent: Agent, creationContext: AgentCreationContext): void {
+    const agentConfig = deepClone(this.options.agentDefaults, agent.getAgentConfigSlice("research", ResearchAgentConfigSchema));
+    const initialState = agent.initializeState(ResearchState, agentConfig);
+    creationContext.items.push(`Research Directory: ${initialState.researchDirectory}`);
   }
 
-  /**
-   * Resolve the configured research directory to an absolute path.
-   */
-  resolveResearchDirectory(): string {
-    const configured = this.options.researchDirectory;
-    if (path.isAbsolute(configured)) {
-      return path.normalize(configured);
-    }
-    return path.resolve(this.projectDirectory, configured);
+  getDefaultResearchDirectory(): string {
+    return this.options.agentDefaults.researchDirectory;
   }
 
-  /**
-   * Ensure the research root directory exists on disk.
-   */
-  ensureResearchDirectory(): string {
-    const dir = this.resolveResearchDirectory();
-    fs.mkdirSync(dir, { recursive: true });
-    return dir;
+  getResearchDirectory(agent: Agent): string {
+    return agent.getState(ResearchState).researchDirectory;
   }
 
-  /**
-   * Point an agent's filesystem working directory at the research root.
-   */
-  applyWorkingDirectory(agent: Agent): void {
-    const researchDirectory = this.ensureResearchDirectory();
-    agent.mutateState(FileSystemState, state => {
-      state.workingDirectory = researchDirectory;
-    });
+  private resolveTopicDirectory(root: string, topicName: string): string {
+    assertValidName(topicName, "topic");
+    return path.join(root, topicName);
   }
 
-  attach(agent: Agent, _creationContext: AgentCreationContext): void {
-    if (agent.config.agentType === "research") {
-      this.applyWorkingDirectory(agent);
-    }
+  private resolveItemPath(root: string, topicName: string, itemName: string): string {
+    assertValidName(itemName, "item");
+    return path.join(this.resolveTopicDirectory(root, topicName), `${itemName}${EXTENSION}`);
   }
 
-  /**
-   * Spawn a research agent under the research directory and start `/deep research`.
-   */
-  startResearch(query: string, options: StartResearchOptions = {}): StartResearchResult {
-    const trimmed = query.trim();
-    if (!trimmed) {
-      throw new Error("Research query must not be empty");
-    }
-
-    const researchDirectory = this.ensureResearchDirectory();
-    const agentManager = this.app.requireService(AgentManager);
-    const agent = agentManager.spawnAgent({
-      agentType: "research",
-      headless: options.headless ?? false,
-    });
-
-    // attach() already applies the directory for research agents; re-apply for safety.
-    this.applyWorkingDirectory(agent);
-
-    agent.handleInput({
-      from: "Research",
-      message: `/deep research ${trimmed}`,
-    });
-
-    return {
-      agentId: agent.id,
-      researchDirectory,
-    };
-  }
-
-  /**
-   * List immediate subdirectories of the research root (past research projects).
-   */
-  listResearchProjects(): ResearchProjectSummary[] {
-    const root = this.resolveResearchDirectory();
-    if (!fs.existsSync(root)) {
+  async listTopics(root: string): Promise<TopicSummary[]> {
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(root, { withFileTypes: true });
+    } catch {
       return [];
     }
 
-    const entries = fs.readdirSync(root, { withFileTypes: true });
-    const projects: ResearchProjectSummary[] = [];
-
+    const topics: TopicSummary[] = [];
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-      const fullPath = path.join(root, entry.name);
-      const stat = fs.statSync(fullPath);
-      projects.push({
-        name: entry.name,
-        path: fullPath,
-        modifiedAt: stat.mtimeMs,
-      });
+      const topicDir = path.join(root, entry.name);
+      const stat = await fs.stat(topicDir);
+      const itemCount = await this.countItems(topicDir);
+      topics.push({ name: entry.name, itemCount, updatedAt: stat.mtime.toISOString() });
     }
 
-    return projects.sort((a, b) => b.modifiedAt - a.modifiedAt);
+    return topics.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  private async countItems(topicDir: string): Promise<number> {
+    try {
+      const files = await fs.readdir(topicDir);
+      return files.filter(f => f.endsWith(EXTENSION)).length;
+    } catch {
+      return 0;
+    }
+  }
+
+  async createTopic(root: string, topicName: string): Promise<TopicSummary> {
+    const topicDir = this.resolveTopicDirectory(root, topicName);
+    if (await pathExists(topicDir)) {
+      throw new Error(`Topic "${topicName}" already exists`);
+    }
+    await fs.mkdir(topicDir, { recursive: true });
+    const stat = await fs.stat(topicDir);
+    return { name: topicName, itemCount: 0, updatedAt: stat.mtime.toISOString() };
+  }
+
+  async deleteTopic(root: string, topicName: string): Promise<boolean> {
+    const topicDir = this.resolveTopicDirectory(root, topicName);
+    try {
+      await fs.rm(topicDir, { recursive: true });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async listItems(root: string, topicName: string): Promise<ItemSummary[]> {
+    const topicDir = this.resolveTopicDirectory(root, topicName);
+    let entries: string[];
+    try {
+      entries = await fs.readdir(topicDir);
+    } catch {
+      return [];
+    }
+
+    const items: ItemSummary[] = [];
+    for (const entry of entries) {
+      if (!entry.endsWith(EXTENSION)) continue;
+      const stat = await fs.stat(path.join(topicDir, entry));
+      if (!stat.isFile()) continue;
+      items.push({ topicName, name: entry.slice(0, -EXTENSION.length), size: stat.size, updatedAt: stat.mtime.toISOString() });
+    }
+
+    return items.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async getItem(root: string, topicName: string, itemName: string): Promise<Item | null> {
+    const filePath = this.resolveItemPath(root, topicName, itemName);
+    let stat: Awaited<ReturnType<typeof fs.stat>>;
+    try {
+      stat = await fs.stat(filePath);
+    } catch {
+      return null;
+    }
+    const content = await fs.readFile(filePath, "utf-8");
+    return { topicName, name: itemName, content, size: stat.size, updatedAt: stat.mtime.toISOString() };
+  }
+
+  async createItem(root: string, topicName: string, itemName: string, content: string): Promise<Item> {
+    const filePath = this.resolveItemPath(root, topicName, itemName);
+    if (await pathExists(filePath)) {
+      throw new Error(`Item "${itemName}" already exists in topic "${topicName}"`);
+    }
+    return this.writeItemFile(root, topicName, itemName, content);
+  }
+
+  async updateItem(root: string, topicName: string, itemName: string, content: string): Promise<Item> {
+    return this.writeItemFile(root, topicName, itemName, content);
+  }
+
+  async deleteItem(root: string, topicName: string, itemName: string): Promise<boolean> {
+    const filePath = this.resolveItemPath(root, topicName, itemName);
+    try {
+      await fs.unlink(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async writeItemFile(root: string, topicName: string, itemName: string, content: string): Promise<Item> {
+    const filePath = this.resolveItemPath(root, topicName, itemName);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, content, "utf-8");
+    const stat = await fs.stat(filePath);
+    return { topicName, name: itemName, content, size: stat.size, updatedAt: stat.mtime.toISOString() };
   }
 }

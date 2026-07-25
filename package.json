@@ -1,30 +1,38 @@
 {
   "name": "@tokenring-ai/research",
   "version": "0.2.0",
-  "description": "Deep research agents that write multi-file markdown dossiers using web search, todos, and filesystem tools.",
-  "dependencies": {
-    "@tokenring-ai/agent": "workspace:*",
-    "@tokenring-ai/app": "workspace:*",
-    "@tokenring-ai/chat": "workspace:*",
-    "@tokenring-ai/filesystem": "workspace:*",
-    "@tokenring-ai/rpc": "workspace:*",
-    "@tokenring-ai/scripting": "workspace:*",
-    "@tokenring-ai/utility": "workspace:*",
-    "zod": "^4.4.3"
-  },
-  "exports": {
-    ".": "./index.ts",
-    "./*": "./*.ts"
-  },
-  "license": "MIT",
+  "description": "Topic-based research dossiers backed by markdown files on disk.",
+  "type": "module",
+  "main": "index.ts",
   "scripts": {
     "test": "bun test",
     "build": "tsc --noEmit",
     "test:watch": "bun test --watch",
     "test:coverage": "bun test --coverage"
   },
-  "type": "module",
+  "keywords": [
+    "tokenring",
+    "research",
+    "markdown",
+    "topics",
+    "ai"
+  ],
+  "author": "TokenRing",
+  "license": "MIT",
+  "dependencies": {
+    "@tokenring-ai/agent": "workspace:*",
+    "@tokenring-ai/app": "workspace:*",
+    "@tokenring-ai/chat": "workspace:*",
+    "@tokenring-ai/rpc": "workspace:*",
+    "@tokenring-ai/utility": "workspace:*",
+    "zod": "^4.4.3"
+  },
   "devDependencies": {
     "typescript": "^7.0.2"
+  },
+  "exports": {
+    ".": "./index.ts",
+    "./*": "./*.ts",
+    "./rpc/schema": "./rpc/schema.ts"
   }
 }
