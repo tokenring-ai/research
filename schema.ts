@@ -33,10 +33,15 @@ export const ResearchServiceConfigSchema = z
   .object({
     agentDefaults: z
       .object({
-        researchDirectory: z.string().meta({ description: "Directory where research topics are stored" } satisfies ConfigFieldMeta),
+        researchDirectory: z
+          .string()
+          .default("research")
+          .meta({ description: "Directory where research topics are stored" } satisfies ConfigFieldMeta),
       })
+      .prefault({})
       .meta({ label: "Agent Defaults" } satisfies ConfigFieldMeta),
   })
+  .prefault({})
   .meta({ label: "Research", description: "Topic-based research dossiers, backed by markdown files on disk" } satisfies ConfigFieldMeta);
 
 export type ResearchServiceConfig = z.input<typeof ResearchServiceConfigSchema>;

@@ -17,13 +17,15 @@ export default {
   displayName: "Research",
   version: packageJSON.version,
   description: packageJSON.description,
-  install(app, config) {
-    const researchService = new ResearchService(config.research);
-    app.addServices(researchService);
+  install(app) {
+    app.addServices(new ResearchService());
     app.waitForService(ChatService, chatService => chatService.addTools(...tools));
     app.waitForService(RpcService, rpcService => {
       rpcService.registerEndpoint(researchRPC);
     });
+  },
+  reconfigure(app, config) {
+    app.requireService(ResearchService).reconfigure(config.research);
   },
   configSchema: packageConfigSchema,
 } satisfies TokenRingPlugin<typeof packageConfigSchema>;

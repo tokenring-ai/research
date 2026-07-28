@@ -5,7 +5,7 @@ import type Agent from "@tokenring-ai/agent/Agent";
 import type { AgentCreationContext } from "@tokenring-ai/agent/types";
 import type { TokenRingService } from "@tokenring-ai/app/types";
 import deepClone from "@tokenring-ai/utility/object/deepClone";
-import { type Item, type ItemSummary, type ParsedResearchConfig, ResearchAgentConfigSchema, type TopicSummary } from "./schema.ts";
+import { type Item, type ItemSummary, type ParsedResearchConfig, ResearchAgentConfigSchema, ResearchServiceConfigSchema, type TopicSummary } from "./schema.ts";
 import { ResearchState } from "./state/ResearchState.ts";
 
 const NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/;
@@ -35,7 +35,15 @@ export default class ResearchService implements TokenRingService {
   readonly name = "ResearchService";
   description = "Research topics and markdown items, backed by files on disk";
 
-  constructor(private options: ParsedResearchConfig) {}
+  private options = ResearchServiceConfigSchema.parse({});
+
+  constructor(options?: ParsedResearchConfig) {
+    if (options) this.options = options;
+  }
+
+  reconfigure(options: ParsedResearchConfig): void {
+    this.options = options;
+  }
 
   attach(agent: Agent, creationContext: AgentCreationContext): void {
     const agentConfig = deepClone(this.options.agentDefaults, agent.getAgentConfigSlice("research", ResearchAgentConfigSchema));
