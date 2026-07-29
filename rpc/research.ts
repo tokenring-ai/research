@@ -1,7 +1,9 @@
+import { AgentManager } from "@tokenring-ai/agent";
 import type TokenRingApp from "@tokenring-ai/app";
 import { createPollingQueryStream } from "@tokenring-ai/rpc/createPollingQueryStream";
 import { createRPCEndpoint } from "@tokenring-ai/rpc/createRPCEndpoint";
 import ResearchService from "../ResearchService.ts";
+import { ResearchState } from "../state/ResearchState.ts";
 import ResearchRpcSchema from "./schema.ts";
 
 async function projectTopics(_args: Record<string, never>, app: TokenRingApp) {
@@ -73,5 +75,39 @@ export default createRPCEndpoint(ResearchRpcSchema, {
     const researchService = app.requireService(ResearchService);
     const success = await researchService.deleteItem(researchService.getDefaultResearchDirectory(), args.topicName, args.name);
     return { success };
+  },
+
+  getResearchState(args, app: TokenRingApp) {
+    const agent = app.requireService(AgentManager).getAgent(args.agentId);
+    if (!agent) {
+      return { status: "agentNotFound" };
+    }
+
+    const state = agent.getState(ResearchState);
+    return {
+      status: "success",
+      selectedTopicName: state.currentItem?.topicName ?? null,
+      selectedItemName: state.currentItem?.name ?? null,
+    };
+  },
+
+  async updateResearchState(args, app: TokenRingApp) {
+    const agent = app.requireService(AgentManager).getAgent(args.agentId);
+    if (!agent) {
+      return { status: "agentNotFound" };
+    }
+
+    const researchService = app.requireService(ResearchService);
+
+    if (args.selectedTopicName && args.selectedItemName) {
+      await researchService.selectItem(args.selectedTopicName, args.selectedItemName, agent);
+    }
+
+    const state = agent.getState(ResearchState);
+    return {
+      status: "success",
+      selectedTopicName: state.currentItem?.topicName ?? null,
+      selectedItemName: state.currentItem?.name ?? null,
+    };
   },
 });

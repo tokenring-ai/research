@@ -59,6 +59,25 @@ export default class ResearchService implements TokenRingService {
     return agent.getState(ResearchState).researchDirectory;
   }
 
+  getCurrentItem(agent: Agent): Item | undefined {
+    return agent.getState(ResearchState).currentItem;
+  }
+
+  async selectItem(topicName: string, itemName: string, agent: Agent): Promise<Item | null> {
+    const directory = this.getResearchDirectory(agent);
+    const item = await this.getItem(directory, topicName, itemName);
+    agent.mutateState(ResearchState, state => {
+      state.currentItem = item ?? undefined;
+    });
+    return item;
+  }
+
+  clearCurrentItem(agent: Agent): void {
+    agent.mutateState(ResearchState, state => {
+      state.currentItem = undefined;
+    });
+  }
+
   private resolveTopicDirectory(root: string, topicName: string): string {
     assertValidName(topicName, "topic");
     return path.join(root, topicName);
