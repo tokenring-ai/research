@@ -7,7 +7,7 @@ const name = "topic_delete";
 const displayName = "Research/delete topic";
 
 async function execute({ name: topicName }: z.output<typeof inputSchema>, agent: Agent): Promise<TokenRingToolResult> {
-  const researchService = agent.requireServiceByType(ResearchService);
+  const researchService = agent.requireService(ResearchService);
   const directory = researchService.getResearchDirectory(agent);
   const success = await researchService.deleteTopic(directory, topicName);
 

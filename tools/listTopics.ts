@@ -7,7 +7,7 @@ const name = "topic_list";
 const displayName = "Research/list topics";
 
 async function execute(_input: z.output<typeof inputSchema>, agent: Agent): Promise<TokenRingToolResult> {
-  const researchService = agent.requireServiceByType(ResearchService);
+  const researchService = agent.requireService(ResearchService);
   const directory = researchService.getResearchDirectory(agent);
   const topics = await researchService.listTopics(directory);
 

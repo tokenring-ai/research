@@ -7,7 +7,7 @@ const name = "item_read";
 const displayName = "Research/read item";
 
 async function execute({ topicName, name: itemName }: z.output<typeof inputSchema>, agent: Agent): Promise<TokenRingToolResult> {
-  const researchService = agent.requireServiceByType(ResearchService);
+  const researchService = agent.requireService(ResearchService);
   const directory = researchService.getResearchDirectory(agent);
   const item = await researchService.getItem(directory, topicName, itemName);
 

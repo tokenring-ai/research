@@ -109,7 +109,7 @@ numbers, hyphens, and underscores (`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`). An item named
 ```typescript
 import { ResearchService } from "@tokenring-ai/research";
 
-const researchService = agent.requireServiceByType(ResearchService);
+const researchService = agent.requireService(ResearchService);
 ```
 
 | Method | Description |

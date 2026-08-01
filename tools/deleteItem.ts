@@ -7,7 +7,7 @@ const name = "item_delete";
 const displayName = "Research/delete item";
 
 async function execute({ topicName, name: itemName }: z.output<typeof inputSchema>, agent: Agent): Promise<TokenRingToolResult> {
-  const researchService = agent.requireServiceByType(ResearchService);
+  const researchService = agent.requireService(ResearchService);
   const directory = researchService.getResearchDirectory(agent);
   const success = await researchService.deleteItem(directory, topicName, itemName);
 

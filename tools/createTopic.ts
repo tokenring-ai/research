@@ -7,7 +7,7 @@ const name = "topic_create";
 const displayName = "Research/create topic";
 
 async function execute({ name: topicName }: z.output<typeof inputSchema>, agent: Agent): Promise<TokenRingToolResult> {
-  const researchService = agent.requireServiceByType(ResearchService);
+  const researchService = agent.requireService(ResearchService);
   const directory = researchService.getResearchDirectory(agent);
   const topic = await researchService.createTopic(directory, topicName);
 
