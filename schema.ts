@@ -40,6 +40,10 @@ export const ResearchServiceConfigSchema = z
       })
       .prefault({})
       .meta({ label: "Agent Defaults" } satisfies ConfigFieldMeta),
+    agentTypes: z
+      .array(z.string())
+      .default(["research"])
+      .meta({ description: "The available agent types that can be used for research" } satisfies ConfigFieldMeta),
   })
   .prefault({})
   .meta({ label: "Research", description: "Topic-based research dossiers, backed by markdown files on disk" } satisfies ConfigFieldMeta);

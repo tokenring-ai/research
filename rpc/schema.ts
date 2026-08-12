@@ -7,6 +7,13 @@ export default {
   name: "Research RPC",
   path: "/rpc/research",
   methods: {
+    getResearchConfiguration: {
+      type: "query",
+      input: z.object({}),
+      result: z.object({
+        agentTypes: z.array(z.string()),
+      }),
+    },
     listTopics: {
       type: "query",
       input: z.object({}),

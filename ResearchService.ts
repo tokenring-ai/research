@@ -45,6 +45,11 @@ export default class ResearchService implements TokenRingService {
     this.options = options;
   }
 
+  /** Agent types configured for research (from ResearchServiceConfigSchema.agentTypes). */
+  getAgentTypes(): string[] {
+    return [...this.options.agentTypes];
+  }
+
   attach(agent: Agent, creationContext: AgentCreationContext): void {
     const agentConfig = deepClone(this.options.agentDefaults, agent.getAgentConfigSlice("research", ResearchAgentConfigSchema));
     const initialState = agent.initializeState(ResearchState, agentConfig);

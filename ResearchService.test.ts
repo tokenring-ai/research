@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import ResearchService from "./ResearchService.ts";
+import { ResearchServiceConfigSchema } from "./schema.ts";
 
 describe("ResearchService", () => {
   const tempDirs: string[] = [];
@@ -21,7 +22,7 @@ describe("ResearchService", () => {
   });
 
   function makeService(researchDirectory: string): ResearchService {
-    return new ResearchService({ agentDefaults: { researchDirectory } });
+    return new ResearchService(ResearchServiceConfigSchema.parse({ agentDefaults: { researchDirectory } }));
   }
 
   test("listTopics returns an empty array when the directory doesn't exist", async () => {

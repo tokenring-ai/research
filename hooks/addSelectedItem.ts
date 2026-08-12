@@ -1,4 +1,4 @@
-import { AfterInputReceived } from "@tokenring-ai/agent";
+import { BeforeInputReceived } from "@tokenring-ai/agent";
 import type Agent from "@tokenring-ai/agent/Agent";
 import type { HookSubscription } from "@tokenring-ai/lifecycle/types";
 import { HookCallback } from "@tokenring-ai/lifecycle/util/hooks";
@@ -12,7 +12,7 @@ function itemAttachmentId(topicName: string, itemName: string): string {
   return `${topicName}/${itemName}`;
 }
 
-async function addSelectedItem(data: AfterInputReceived, agent: Agent) {
+async function addSelectedItem(data: BeforeInputReceived, agent: Agent) {
   const attachments = (data.input.attachments ??= []);
   agent.mutateState(ResearchState, state => {
     if (!state.currentItem) return;
@@ -31,7 +31,7 @@ async function addSelectedItem(data: AfterInputReceived, agent: Agent) {
   });
 }
 
-const callbacks = [new HookCallback(AfterInputReceived, addSelectedItem)];
+const callbacks = [new HookCallback(BeforeInputReceived, addSelectedItem)];
 
 export default {
   name,

@@ -29,6 +29,14 @@ const streamItems = createPollingQueryStream({
 });
 
 export default createRPCEndpoint(ResearchRpcSchema, {
+  getResearchConfiguration(_args, app: TokenRingApp) {
+    const researchService = app.requireService(ResearchService);
+
+    return {
+      agentTypes: researchService.getAgentTypes(),
+    };
+  },
+
   async listTopics(args, app: TokenRingApp) {
     return projectTopics(args, app);
   },
