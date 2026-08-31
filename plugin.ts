@@ -22,7 +22,7 @@ export default {
   description: packageJSON.description,
   config,
   install(app) {
-    app.addService(new ResearchService());
+    app.addService(ResearchService, new ResearchService());
     app.waitForService(AgentLifecycleService, lifecycleService => lifecycleService.addHooks(addSelectedItem));
     app.waitForService(ChatService, chatService => chatService.addTools(tools));
     app.waitForService(RpcService, rpcService => {

@@ -158,7 +158,7 @@ research:
 | Field                             | Type       | Required | Default      | Description                                |
 |-----------------------------------|------------|----------|--------------|--------------------------------------------|
 | `agentDefaults.researchDirectory` | `string`   | No       | `"research"` | Directory where research topics are stored |
-| `agentTypes`                      | `string[]` | No       | `["research"]` | Agent types available in the Research app |
+| `agentTypes`                      | `string[]` | No       | `["research"]` | The available agent types that can be used for research (see [Agent Types](#agent-types)) |
 
 Agents may override `researchDirectory` via their own `research.researchDirectory`
 agent config slice.
@@ -172,6 +172,27 @@ UI integration:
   backed by markdown files on disk"`
 - **`agentDefaults`**: label `"Agent Defaults"`
 - **`researchDirectory`**: description `"Directory where research topics are stored"`
+- **`agentTypes`**: description `"The available agent types that can be used for
+  research"`
+
+### Agent Types
+
+The package ships one agent type via `config/agents/research.yaml`, referenced by the default
+`agentTypes` value:
+
+| Field         | Value                                                                  |
+|---------------|------------------------------------------------------------------------|
+| Name          | `research`                                                             |
+| Display name  | `Deep Research`                                                        |
+| Category      | `Research`                                                             |
+| Description   | Multi-file deep research reports using web search, todos, and research topic tools. |
+| Enabled tools | `websearch_*`, `todo`, `topic_*`, `item_*`, `file_*`                   |
+| Enabled hooks | `addSelectedItem`                                                      |
+
+The agent's system prompt instructs it to create a slug-named topic per research project, plan the
+work with todos, gather verified web sources with citations, and write markdown items (`summary`,
+`toc`, and one deep-dive item per major section) via the research tools. The agent config also
+defines the `/deep research` chat command and the `deep_research` config-defined tool.
 
 ### Exported Schemas
 
@@ -194,6 +215,9 @@ import {
 | `TopicSummarySchema`         | Topic metadata (`name`, `itemCount`, `updatedAt`)                  |
 | `ItemSummarySchema`          | Item metadata (`topicName`, `name`, `size`, `updatedAt`)           |
 | `ItemSchema`                 | Full item including `content`                                       |
+
+The corresponding types (`TopicSummary`, `ItemSummary`, `Item`, `ResearchAgentConfig`,
+`ResearchServiceConfig`, and `ParsedResearchConfig`) are exported alongside the schemas.
 
 ## Naming
 
@@ -218,6 +242,7 @@ const researchService = app.requireService(ResearchService);
 
 | Method | Description |
 |--------|-------------|
+| `getAgentTypes()` | Return the agent types configured for research (from `ResearchServiceConfigSchema.agentTypes`) |
 | `getDefaultResearchDirectory()` | Return the application default research directory |
 | `getResearchDirectory(agent)` | Return the active agent's research directory |
 | `getCurrentItem(agent)` | Return the agent's currently selected item, or `undefined` |
@@ -255,9 +280,10 @@ console.log(state.researchDirectory);
 console.log(state.currentItem?.topicName);
 ```
 
-| Property           | Type                | Description                                                      |
-|--------------------|---------------------|------------------------------------------------------------------|
-| `researchDirectory`| `string`            | The agent's configured research directory                        |
+| Property               | Type                                       | Description                                                     |
+|------------------------|--------------------------------------------|-----------------------------------------------------------------|
+| `initialConfig`        | `ParsedResearchConfig["agentDefaults"]`    | The agent defaults the state was initialized with (readonly)    |
+| `researchDirectory`    | `string`                                   | The agent's configured research directory                       |
 | `currentItem`      | `Item \| undefined` | The currently selected research item                             |
 | `lastAttachedItemId`| `string \| undefined` | ID of the last item attached to chat (prevents duplicate attachments) |
 
@@ -274,17 +300,45 @@ it inherits the parent's `currentItem` if the child does not already have one.
 - `deserialize(data)` — Restores all properties from serialized data
 - `show()` — Returns a human-readable summary string
 
-## Services
+## Services / Lifecycle Methods
 
-`ResearchService` implements the `TokenRingService` interface.
-
-### Service Registration
+`ResearchService` implements the `TokenRingService` interface. The plugin registers it and wires
+the rest of its surface through `waitForService`:
 
 ```typescript
-app.addService(new ResearchService());
+app.addService(ResearchService, new ResearchService());
+app.waitForService(AgentLifecycleService, lifecycleService => lifecycleService.addHooks(addSelectedItem));
+app.waitForService(ChatService, chatService => chatService.addTools(tools));
+app.waitForService(RpcService, rpcService => {
+  rpcService.registerEndpoint(researchRPC);
+});
 ```
 
-### Lifecycle Methods
+### Plugin Lifecycle
+
+The plugin (`plugin/research/plugin.ts`) defines `install` and `reconfigure`:
+
+| Field          | Value                                             |
+|----------------|---------------------------------------------------|
+| `name`         | `@tokenring-ai/research`                          |
+| `displayName`  | `Research`                                        |
+| `version`      | package version                                   |
+| `description`  | package description                               |
+| `configSchema` | `z.object({ research: ResearchServiceConfigSchema })` |
+
+**`install(app)`:**
+
+1. Adds `ResearchService` to the app.
+2. When `AgentLifecycleService` becomes available, registers the `addSelectedItem` hook.
+3. When `ChatService` becomes available, registers the seven research tools.
+4. When `RpcService` becomes available, registers the `/rpc/research` endpoint.
+
+**`reconfigure(app, config)`:**
+
+Calls `app.requireService(ResearchService).reconfigure(config.research)`, which replaces the
+service configuration (agent defaults and agent types).
+
+### Service Lifecycle Methods
 
 | Method | Description |
 |--------|-------------|
@@ -344,6 +398,9 @@ methods:
 | `getResearchState`   | query     | Get an agent's currently selected topic and item       |
 | `updateResearchState`| mutation  | Set an agent's currently selected topic and item       |
 
+The `createItem` method's `content` input is optional and defaults to an empty
+string; `updateItem` requires `content` to be provided.
+
 ### State Management Methods
 
 `getResearchState` and `updateResearchState` return a discriminated union on
@@ -353,6 +410,10 @@ methods:
 |------------------|------------------------------------------------------------|------------------------------------------------|
 | `"success"`      | `selectedTopicName: string \| null`, `selectedItemName: string \| null` | Agent found and state returned |
 | `"agentNotFound"`| _(none)_                                                   | The specified `agentId` does not match an active agent |
+
+`updateResearchState` accepts `selectedTopicName` and `selectedItemName` as optional inputs. The
+selection is only changed when both are provided; otherwise the agent's current selection is left
+unchanged and returned.
 
 ### Streaming Methods
 
@@ -382,8 +443,10 @@ bun test --watch     # Watch mode
 bun test --coverage  # Coverage report
 ```
 
-The test suite covers topic creation, deletion, item CRUD, auto-vivification, name
-validation, and directory listing behavior.
+The test suite covers topic and item creation (including duplicate-creation errors), item
+read/update/delete, topic deletion, auto-vivification of topics by `createItem`, name
+validation, `.md`-only listing with name sorting and item counts, and missing-directory
+handling.
 
 ## License
 
