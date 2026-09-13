@@ -33,6 +33,7 @@
   },
   "exports": {
     ".": "./index.ts",
+    "./frontend/*": "./frontend/*",
     "./*": "./*.ts",
     "./rpc/schema": "./rpc/schema.ts"
   }
