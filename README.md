@@ -42,6 +42,13 @@ todos, and the research tools to produce thorough multi-file research dossiers.
   the topic automatically
 - **Deep Research Agent**: Ships a research agent definition and `/deep research`
   command for multi-file research dossiers
+- **Search, Export, Move**: Case-insensitive search across every topic (names, title
+  headings and content, with snippets), Markdown export of a dossier or a whole topic,
+  and rename / move of a dossier between topics
+- **Dashboard**: The Research navigator has a search box, per-topic export, and shows
+  the attached research agent's todo list (also on the landing panel); dossier panels
+  offer rename / move (open panels, unsaved drafts and the URL follow the file) and a
+  Markdown download of what is on screen
 - **Selected Item Attachments**: A lifecycle hook automatically attaches the currently
   selected research item to new chat messages
 
@@ -266,6 +273,9 @@ const researchService = app.requireService(ResearchService);
 | `createItem(root, topicName, itemName, content)` | Create a new item, auto-creating its topic; throws if the name is already in use |
 | `updateItem(root, topicName, itemName, content)` | Create or overwrite an item, auto-creating its topic |
 | `deleteItem(root, topicName, itemName)` | Delete an item; returns `false` if it didn't exist |
+| `renameItem(root, fromTopic, fromName, toTopic, toName)` | Move / rename an item, creating the target topic; throws if the target exists or the source is missing |
+| `searchItems(root, query, { topicName?, limit? })` | Case-insensitive search over item names, first-heading titles and content; title matches first, then by match count (default limit 50) |
+| `exportTopic(root, topicName)` | Concatenate every item of a topic into one Markdown document (`{ fileName, content, itemCount }`) |
 
 ### ResearchState
 
@@ -395,6 +405,9 @@ methods:
 | `createItem`         | mutation  | Create a new item                                      |
 | `updateItem`         | mutation  | Create or overwrite an item                            |
 | `deleteItem`         | mutation  | Delete an item                                         |
+| `renameItem`         | mutation  | Move / rename an item (`newTopicName`, `newName`); agents with it selected follow it |
+| `searchItems`        | query     | Search all topics (or one via `topicName`); returns `title`, `titleMatch`, `contentMatches`, `snippet` per result |
+| `exportTopic`        | query     | A topic's items concatenated as one Markdown document  |
 | `getResearchState`   | query     | Get an agent's currently selected topic and item       |
 | `updateResearchState`| mutation  | Set an agent's currently selected topic and item       |
 

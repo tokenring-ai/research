@@ -77,6 +77,18 @@ describe("ResearchService", () => {
     expect((await service.getItem(dir, "topic", "page"))?.content).toBe("v2");
   });
 
+  test("updateItem with requireExisting refuses to re-create an item deleted elsewhere", async () => {
+    const dir = tempDir();
+    const service = makeService(dir);
+
+    await service.createItem(dir, "topic", "page", "v1");
+    expect((await service.updateItem(dir, "topic", "page", "v2", { requireExisting: true })).content).toBe("v2");
+
+    await service.deleteItem(dir, "topic", "page");
+    await expect(service.updateItem(dir, "topic", "page", "v3", { requireExisting: true })).rejects.toThrow('Item "page" no longer exists in topic "topic"');
+    expect(await service.getItem(dir, "topic", "page")).toBeNull();
+  });
+
   test("deleteItem removes an existing item and reports missing ones", async () => {
     const dir = tempDir();
     const service = makeService(dir);
@@ -119,5 +131,69 @@ describe("ResearchService", () => {
 
     await expect(service.createTopic(dir, "../escape")).rejects.toThrow("Invalid topic name");
     await expect(service.createItem(dir, "topic", "has space", "x")).rejects.toThrow("Invalid item name");
+  });
+
+  test("renameItem moves a dossier within and across topics, creating the target topic", async () => {
+    const dir = tempDir();
+    const service = makeService(dir);
+    await service.createItem(dir, "a", "notes", "# Notes\nbody");
+
+    const renamed = await service.renameItem(dir, "a", "notes", "a", "summary");
+    expect(renamed).toMatchObject({ topicName: "a", name: "summary", content: "# Notes\nbody" });
+    expect(await service.getItem(dir, "a", "notes")).toBeNull();
+
+    const moved = await service.renameItem(dir, "a", "summary", "b", "summary");
+    expect(moved.topicName).toBe("b");
+    expect(fs.existsSync(path.join(dir, "b", "summary.md"))).toBe(true);
+    expect(fs.existsSync(path.join(dir, "a", "summary.md"))).toBe(false);
+  });
+
+  test("renameItem refuses to overwrite and reports a missing source", async () => {
+    const dir = tempDir();
+    const service = makeService(dir);
+    await service.createItem(dir, "a", "one", "1");
+    await service.createItem(dir, "a", "two", "2");
+
+    await expect(service.renameItem(dir, "a", "one", "a", "two")).rejects.toThrow('Item "two" already exists in topic "a"');
+    await expect(service.renameItem(dir, "a", "ghost", "a", "three")).rejects.toThrow('Item "ghost" not found');
+    await expect(service.renameItem(dir, "a", "one", "a", "../escape")).rejects.toThrow("Invalid item name");
+    expect((await service.getItem(dir, "a", "two"))?.content).toBe("2");
+  });
+
+  test("searchItems matches names, titles and content case-insensitively with snippets", async () => {
+    const dir = tempDir();
+    const service = makeService(dir);
+    await service.createItem(dir, "batteries", "overview", "# Solid-State Overview\nIntro text.");
+    await service.createItem(dir, "batteries", "market", `# Market\n${"x".repeat(200)} lithium supply LITHIUM prices ${"y".repeat(200)}`);
+    await service.createItem(dir, "solar", "panels", "# Panels\nNothing relevant.");
+
+    const results = await service.searchItems(dir, "Lithium");
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ topicName: "batteries", name: "market", title: "Market", titleMatch: false, contentMatches: 2 });
+    expect(results[0]?.snippet.startsWith("…")).toBe(true);
+    expect(results[0]?.snippet.endsWith("…")).toBe(true);
+    expect(results[0]?.snippet.toLowerCase()).toContain("lithium supply");
+
+    const byTitle = await service.searchItems(dir, "solid-state");
+    expect(byTitle[0]).toMatchObject({ name: "overview", titleMatch: true });
+
+    expect(await service.searchItems(dir, "panels", { topicName: "batteries" })).toEqual([]);
+    expect(await service.searchItems(dir, "   ")).toEqual([]);
+    expect(await service.searchItems(dir, "e", { limit: 2 })).toHaveLength(2);
+  });
+
+  test("exportTopic concatenates every dossier into one Markdown document", async () => {
+    const dir = tempDir();
+    const service = makeService(dir);
+    await service.createItem(dir, "t", "alpha", "# Alpha\nA body");
+    await service.createItem(dir, "t", "beta", "B body");
+
+    const exported = await service.exportTopic(dir, "t");
+    expect(exported.fileName).toBe("t.md");
+    expect(exported.itemCount).toBe(2);
+    expect(exported.content.startsWith("# t\n")).toBe(true);
+    expect(exported.content.indexOf("## alpha")).toBeLessThan(exported.content.indexOf("## beta"));
+    expect(exported.content).toContain("A body");
+    await expect(service.exportTopic(dir, "missing")).rejects.toThrow('Topic "missing" not found');
   });
 });

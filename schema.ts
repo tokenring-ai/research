@@ -21,6 +21,22 @@ export const ItemSchema = ItemSummarySchema.extend({
 });
 export type Item = z.output<typeof ItemSchema>;
 
+/** One dossier matching a cross-topic search. */
+export const ItemSearchResultSchema = z.object({
+  topicName: z.string(),
+  name: z.string(),
+  /** The dossier's first Markdown heading, or null when it has none. */
+  title: z.string().nullable(),
+  /** True when the query matched the dossier name or its title heading. */
+  titleMatch: z.boolean(),
+  /** Number of case-insensitive occurrences in the content. */
+  contentMatches: z.number(),
+  /** Context around the first content match (or the start of the dossier for a title-only match). */
+  snippet: z.string(),
+  updatedAt: z.string(),
+});
+export type ItemSearchResult = z.output<typeof ItemSearchResultSchema>;
+
 export const ResearchAgentConfigSchema = z
   .object({
     researchDirectory: z.string().exactOptional(),

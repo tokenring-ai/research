@@ -6,6 +6,15 @@ import ResearchService from "../ResearchService.ts";
 import { ResearchState } from "../state/ResearchState.ts";
 import ResearchRpcSchema from "./schema.ts";
 
+/**
+ * Whether any web-search provider is registered. The websearch plugin is
+ * optional, so its service is looked up by name rather than imported.
+ */
+export function isSearchProviderAvailable(app: Pick<TokenRingApp, "services">): boolean {
+  const webSearch = app.services.get("WebSearchService") as { getAvailableProviders?: () => string[] } | undefined;
+  return (webSearch?.getAvailableProviders?.().length ?? 0) > 0;
+}
+
 async function projectTopics(_args: Record<string, never>, app: TokenRingApp) {
   const researchService = app.requireService(ResearchService);
   const topics = await researchService.listTopics(researchService.getDefaultResearchDirectory());
@@ -34,6 +43,7 @@ export default createRPCEndpoint(ResearchRpcSchema, {
 
     return {
       agentTypes: researchService.getAgentTypes(),
+      searchProviderAvailable: isSearchProviderAvailable(app),
     };
   },
 
@@ -75,7 +85,10 @@ export default createRPCEndpoint(ResearchRpcSchema, {
 
   async updateItem(args, app: TokenRingApp) {
     const researchService = app.requireService(ResearchService);
-    const item = await researchService.updateItem(researchService.getDefaultResearchDirectory(), args.topicName, args.name, args.content);
+    // The editor saves an item it loaded; one deleted meanwhile is a conflict, not a silent re-create.
+    const item = await researchService.updateItem(researchService.getDefaultResearchDirectory(), args.topicName, args.name, args.content, {
+      requireExisting: true,
+    });
     return { item };
   },
 
@@ -83,6 +96,42 @@ export default createRPCEndpoint(ResearchRpcSchema, {
     const researchService = app.requireService(ResearchService);
     const success = await researchService.deleteItem(researchService.getDefaultResearchDirectory(), args.topicName, args.name);
     return { success };
+  },
+
+  async renameItem(args, app: TokenRingApp) {
+    const researchService = app.requireService(ResearchService);
+    const item = await researchService.renameItem(researchService.getDefaultResearchDirectory(), args.topicName, args.name, args.newTopicName, args.newName);
+    // Agents that had the old dossier selected follow it to its new name.
+    const root = researchService.getDefaultResearchDirectory();
+    for (const agent of app.requireService(AgentManager).getAgents()) {
+      let state: ResearchState;
+      try {
+        state = agent.getState(ResearchState);
+      } catch {
+        continue; // Agent without the research slice.
+      }
+      const current = state.currentItem;
+      if (state.researchDirectory === root && current?.topicName === args.topicName && current.name === args.name) {
+        agent.mutateState(ResearchState, state => {
+          state.currentItem = item;
+        });
+      }
+    }
+    return { item };
+  },
+
+  async searchItems(args, app: TokenRingApp) {
+    const researchService = app.requireService(ResearchService);
+    const results = await researchService.searchItems(researchService.getDefaultResearchDirectory(), args.query, {
+      ...(args.topicName ? { topicName: args.topicName } : {}),
+      ...(args.limit ? { limit: args.limit } : {}),
+    });
+    return { results };
+  },
+
+  async exportTopic(args, app: TokenRingApp) {
+    const researchService = app.requireService(ResearchService);
+    return researchService.exportTopic(researchService.getDefaultResearchDirectory(), args.topicName);
   },
 
   getResearchState(args, app: TokenRingApp) {

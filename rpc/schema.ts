@@ -1,7 +1,7 @@
 import type { RPCSchema } from "@tokenring-ai/rpc/types";
 import { AgentNotFoundSchema, SuccessSchema } from "@tokenring-ai/rpc/types";
 import { z } from "zod";
-import { ItemSchema, ItemSummarySchema, TopicSummarySchema } from "../schema.ts";
+import { ItemSchema, ItemSearchResultSchema, ItemSummarySchema, TopicSummarySchema } from "../schema.ts";
 
 export default {
   name: "Research RPC",
@@ -12,6 +12,8 @@ export default {
       input: z.object({}),
       result: z.object({
         agentTypes: z.array(z.string()),
+        /** False when no web-search provider is registered, so research agents have no search tools. */
+        searchProviderAvailable: z.boolean(),
       }),
     },
     listTopics: {
@@ -104,6 +106,41 @@ export default {
       }),
       result: z.object({
         success: z.boolean(),
+      }),
+    },
+    renameItem: {
+      type: "mutation",
+      input: z.object({
+        topicName: z.string(),
+        name: z.string(),
+        newTopicName: z.string(),
+        newName: z.string(),
+      }),
+      result: z.object({
+        item: ItemSchema,
+      }),
+    },
+    searchItems: {
+      type: "query",
+      input: z.object({
+        query: z.string(),
+        /** Restrict the search to one topic. */
+        topicName: z.string().exactOptional(),
+        limit: z.number().int().min(1).max(200).exactOptional(),
+      }),
+      result: z.object({
+        results: z.array(ItemSearchResultSchema),
+      }),
+    },
+    exportTopic: {
+      type: "query",
+      input: z.object({
+        topicName: z.string(),
+      }),
+      result: z.object({
+        fileName: z.string(),
+        content: z.string(),
+        itemCount: z.number(),
       }),
     },
     getResearchState: {
