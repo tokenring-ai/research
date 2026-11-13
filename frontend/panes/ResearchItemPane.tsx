@@ -1,34 +1,31 @@
 import Editor from "@monaco-editor/react";
-import AgentTodoList from "@tokenring-ai/one-frontend/components/AgentTodoList.tsx";
+import { usePanelBadge } from "@tokenring-ai/one-frontend/apps/panelHooks.ts";
 import { markdownLinkComponents } from "@tokenring-ai/one-frontend/components/chat/MarkdownLink.tsx";
 import ConfirmModal from "@tokenring-ai/one-frontend/components/ui/ConfirmModal.tsx";
 import EditorSaveBar from "@tokenring-ai/one-frontend/components/ui/EditorSaveBar.tsx";
 import EmptyState from "@tokenring-ai/one-frontend/components/ui/EmptyState.tsx";
-import EmptyStateWithPrompt from "@tokenring-ai/one-frontend/components/ui/EmptyStateWithPrompt.tsx";
 import LoadingState from "@tokenring-ai/one-frontend/components/ui/LoadingState.tsx";
 import SaveAsModal from "@tokenring-ai/one-frontend/components/ui/SaveAsModal.tsx";
 import { toastManager } from "@tokenring-ai/one-frontend/components/ui/toast.tsx";
 import ViewHeader from "@tokenring-ai/one-frontend/components/ui/ViewHeader.tsx";
 import ViewModeToggle from "@tokenring-ai/one-frontend/components/ui/ViewModeToggle.tsx";
 import ViewShell from "@tokenring-ai/one-frontend/components/ui/ViewShell.tsx";
-import { useDashboardApi } from "@tokenring-ai/one-frontend/dock/DashboardApiContext.tsx";
-import { setPanelBadge } from "@tokenring-ai/one-frontend/dock/panelBadges.ts";
-import type { ViewPanelHandle, ViewProps } from "@tokenring-ai/one-frontend/dock/types.ts";
 import { useKeyboardShortcuts } from "@tokenring-ai/one-frontend/hooks/useKeyboardShortcuts.ts";
 import { useRemoteChangeDetection } from "@tokenring-ai/one-frontend/hooks/useRemoteChangeDetection.ts";
+import type { ViewProps } from "@tokenring-ai/one-frontend/layout/define.ts";
+import { usePanel } from "@tokenring-ai/one-frontend/layout/hooks.ts";
 import { downloadTextFile } from "@tokenring-ai/one-frontend/lib/transcriptExport.ts";
 import { runOrConfirm } from "@tokenring-ai/one-frontend/lib/uiPreferences.ts";
 import { researchRPCClient, useItems, useTopics } from "@tokenring-ai/one-frontend/rpc.ts";
 import { useMonacoTheme } from "@tokenring-ai/one-frontend/theme/bridges/useMonacoTheme.ts";
 import formatError from "@tokenring-ai/utility/error/formatError";
-import { Download, Eye, FileText, FolderInput, Pencil, RotateCcw, Search, Trash2 } from "lucide-react";
+import { Download, Eye, FileText, FolderInput, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { ResearchItemParams } from "../app.tsx";
 import { NAME_PATTERN, researchItemKey } from "../lib/paths.ts";
-import { useResearchNavigation } from "../lib/researchShared.tsx";
-import { getItemDraft, setItemDraft, useItemDraft, useResearchAgentSession } from "../lib/researchStore.ts";
+import { getItemDraft, setItemDraft, useItemDraft } from "../lib/researchStore.ts";
+import { useResearchLayoutNavigation } from "../lib/useResearchLayoutNavigation.ts";
 
 function DossierPreview({ content }: { content: string }) {
   return (
@@ -51,70 +48,10 @@ function DossierPreview({ content }: { content: string }) {
   );
 }
 
-/**
- * The panel before a dossier is opened: browse existing research or describe a
- * new topic to start a research agent. The agent itself belongs to the topics
- * navigator, which publishes the `start` hook this prompt calls.
- */
-function ResearchLanding({ panel }: { panel: ViewPanelHandle<ResearchItemParams> }) {
-  const { data } = useTopics();
-  const session = useResearchAgentSession();
-  const topicCount = data?.topics.length ?? 0;
-
-  useEffect(() => {
-    panel.setTitle("Research");
-  }, [panel]);
-
-  const handleStartResearch = useCallback(
-    async (query: string): Promise<boolean> => {
-      if (!session) {
-        toastManager.error("Open the Research topics panel to start a research agent", { duration: 5000 });
-        return false;
-      }
-      return session.start(query);
-    },
-    [session],
-  );
-
-  return (
-    <div className="h-full flex flex-col min-h-0">
-      <EmptyStateWithPrompt
-        icon={Search}
-        iconGradient="from-indigo-500 to-violet-600"
-        title="Start researching"
-        descriptionWithContent={
-          <>
-            Select existing research from the <span className="font-medium text-secondary">Topics</span> panel to view it, or describe a new topic below to
-            start a research agent.
-          </>
-        }
-        descriptionEmpty={
-          <>Describe what you want to research below. A research agent will search the web and write markdown findings into topics in the Topics panel.</>
-        }
-        hasContent={topicCount > 0}
-        agentRunningMessage="A research agent is running in the chat panel. Select an item from the Topics panel to open it, or continue the conversation with the agent."
-        hasAgent={!!session?.agentId}
-        promptLabel="Research prompt"
-        promptPlaceholder="e.g. Solid-state battery commercialization timeline 2024–2026"
-        promptAriaLabel="Research query"
-        submitLabel="Start research"
-        submitAriaLabel="Start research agent"
-        buttonVariant="indigo"
-        onSubmit={handleStartResearch}
-      />
-      {session?.agentId && (
-        <section aria-label="Research agent progress" className="shrink-0 mx-auto w-full max-w-xl px-4 pb-4">
-          <AgentTodoList agentId={session.agentId} agentName="research agent" className="pl-5 border-t border-primary/40 pt-2" />
-        </section>
-      )}
-    </div>
-  );
-}
-
 /** One markdown dossier: preview, editor, save / save-as / delete. */
-function ResearchItem({ topicName, itemName, panel }: { topicName: string; itemName: string; panel: ViewPanelHandle<ResearchItemParams> }) {
-  const dashboard = useDashboardApi();
-  const { openItem, closeItem, moveItem } = useResearchNavigation();
+function ResearchItem({ topicName, itemName }: { topicName: string; itemName: string }) {
+  const panel = usePanel();
+  const { closeItem, moveItem } = useResearchLayoutNavigation();
   const monacoTheme = useMonacoTheme();
   const topics = useTopics();
   const items = useItems(topicName);
@@ -167,15 +104,8 @@ function ResearchItem({ topicName, itemName, panel }: { topicName: string; itemN
     void load();
   }, [load]);
 
-  useEffect(() => {
-    panel.setTitle(itemName);
-  }, [itemName, panel]);
-
   // Unsaved edits show as a dot on the tab; the draft itself survives closing the panel.
-  useEffect(() => {
-    setPanelBadge(panel.panelId, isDirty ? { tone: "warning", title: "Unsaved changes" } : null);
-  }, [isDirty, panel.panelId]);
-  useEffect(() => () => setPanelBadge(panel.panelId, null), [panel.panelId]);
+  usePanelBadge(isDirty ? { tone: "warning", label: "Unsaved changes" } : null);
 
   // The agent rewrites dossiers while it researches; reload silently unless the user has edits.
   const summary = items.data?.items.find(entry => entry.name === itemName) ?? null;
@@ -214,14 +144,13 @@ function ResearchItem({ topicName, itemName, panel }: { topicName: string; itemN
         const { item } = await researchRPCClient.createItem({ topicName: nextTopic, name: nextName, content });
         setItemDraft(researchItemKey(topicName, itemName), null);
         setSaveAsOpen(false);
-        dashboard.updateViewParams(panel.panelId, { topicName: item.topicName, itemName: item.name });
-        openItem(item.topicName, item.name);
+        moveItem({ topicName, itemName }, { topicName: item.topicName, itemName: item.name });
         toastManager.success("Saved", { duration: 2000 });
       } catch (e: unknown) {
         toastManager.error(formatError(e), { duration: 4000 });
       }
     },
-    [content, dashboard, itemName, openItem, panel.panelId, topicName],
+    [content, itemName, moveItem, topicName],
   );
 
   /** Renames / moves the file; open panels, the draft and the URL follow it. */
@@ -256,12 +185,11 @@ function ResearchItem({ topicName, itemName, panel }: { topicName: string; itemN
       setItemDraft(researchItemKey(topicName, itemName), null);
       setDeleteOpen(false);
       closeItem(topicName, itemName);
-      panel.close();
       toastManager.success("Deleted", { duration: 2000 });
     } catch (e: unknown) {
       toastManager.error(formatError(e), { duration: 4000 });
     }
-  }, [closeItem, itemName, panel, topicName]);
+  }, [closeItem, itemName, topicName]);
 
   let body: React.ReactNode;
   if (isReady) {
@@ -454,13 +382,9 @@ function ResearchItem({ topicName, itemName, panel }: { topicName: string; itemN
   );
 }
 
-/**
- * One research dossier per panel. Without params the panel is the landing
- * prompt, which the next dossier opened from the navigator fills in place.
- */
-export default function ResearchItemView({ params, panel }: ViewProps<ResearchItemParams>) {
+/** One research dossier per tab, opened at `/research/<topic>/<item>`. */
+export default function ResearchItemPane({ params }: ViewProps) {
   const { topicName, itemName } = params;
-  if (!topicName || !itemName) return <ResearchLanding panel={panel} />;
-  // Keyed so a panel that follows a rename (or Save As) reloads from scratch.
-  return <ResearchItem key={researchItemKey(topicName, itemName)} topicName={topicName} itemName={itemName} panel={panel} />;
+  if (!topicName || !itemName) return null;
+  return <ResearchItem key={researchItemKey(topicName, itemName)} topicName={topicName} itemName={itemName} />;
 }

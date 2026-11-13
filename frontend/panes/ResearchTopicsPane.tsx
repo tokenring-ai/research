@@ -1,3 +1,5 @@
+import { useAttachedAgentChat } from "@tokenring-ai/one-frontend/apps/chat/useAttachedAgentChat.ts";
+import { useRouteParamsFor } from "@tokenring-ai/one-frontend/apps/panelHooks.ts";
 import AgentSessionList from "@tokenring-ai/one-frontend/components/AgentSessionList.tsx";
 import AgentTodoList from "@tokenring-ai/one-frontend/components/AgentTodoList.tsx";
 import NavigationSidebarHeader from "@tokenring-ai/one-frontend/components/layout/NavigationSidebarHeader.tsx";
@@ -10,8 +12,6 @@ import SaveAsModal from "@tokenring-ai/one-frontend/components/ui/SaveAsModal.ts
 import SearchInput from "@tokenring-ai/one-frontend/components/ui/SearchInput.tsx";
 import { toastManager } from "@tokenring-ai/one-frontend/components/ui/toast.tsx";
 import ViewShell from "@tokenring-ai/one-frontend/components/ui/ViewShell.tsx";
-import { usePanel } from "@tokenring-ai/one-frontend/dock/PanelContext.tsx";
-import { useAgentChatPanel } from "@tokenring-ai/one-frontend/dock/useAgentChatPanel.ts";
 import { useAppAgentSession } from "@tokenring-ai/one-frontend/hooks/useAppAgentSession.tsx";
 import { useAutoExpandTree } from "@tokenring-ai/one-frontend/hooks/useAutoExpandTree.ts";
 import { toastOnReject } from "@tokenring-ai/one-frontend/lib/toastOnReject.ts";
@@ -23,11 +23,11 @@ import formatError from "@tokenring-ai/utility/error/formatError";
 import { formatBytes } from "@tokenring-ai/utility/number/formatBytes";
 import { BookOpen, ChevronDown, ChevronRight, Download, FileText, FolderOpen, Plus, SearchX, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { RESEARCH_ITEM_VIEW_ID, RESEARCH_TOPIC_VIEW_ID } from "../ids.ts";
 import { DEFAULT_MARKDOWN, NAME_PATTERN } from "../lib/paths.ts";
-import { useResearchNavigation } from "../lib/researchShared.tsx";
 import { setItemDraft, setResearchAgentSession } from "../lib/researchStore.ts";
-import { RESEARCH_DASHBOARD_ID } from "../manifest.ts";
+import { useResearchLayoutNavigation } from "../lib/useResearchLayoutNavigation.ts";
 
 interface Selection {
   topicName: string;
@@ -242,9 +242,9 @@ function SearchResults({
 }
 
 /**
- * The research agents this dashboard can attach to. Owns the only
- * `useAppAgentSession` of the app: it docks the chat panel beside the topics
- * and publishes a `start` hook the landing panel uses for its prompt.
+ * The research agents this app can attach to. Owns the only
+ * `useAppAgentSession` of the app: it keeps the chat beside the dossiers
+ * and publishes a `start` hook the landing tab uses for its prompt.
  */
 function ResearchAgentSessions({ selected, onAgentChange }: { selected: Selection | null; onAgentChange: (agentId: string | null) => void }) {
   const configuration = useResearchConfiguration();
@@ -254,7 +254,8 @@ function ResearchAgentSessions({ selected, onAgentChange }: { selected: Selectio
     storageKey: "research",
     agentTypes: allowedAgentTypes,
   });
-  useAgentChatPanel({ agentId });
+  // Keeps the attached agent's chat beside the dossiers.
+  useAttachedAgentChat({ agentId });
 
   useEffect(() => {
     onAgentChange(agentId);
@@ -317,14 +318,14 @@ function ResearchAgentSessions({ selected, onAgentChange }: { selected: Selectio
 }
 
 /**
- * Navigator for the Research dashboard: topics, the dossiers inside them and
- * the running research agents. Rows open dossiers in the main area; elsewhere
- * (another dashboard) they navigate to the Research dashboard.
+ * Navigator for the Research app: topics, the dossiers inside them and the
+ * running research agents. Rows open dossiers as tabs.
  */
-export default function ResearchTopicsView() {
-  const panel = usePanel();
-  const inResearchDashboard = panel.dashboardId === RESEARCH_DASHBOARD_ID;
-  const { topicName: routeTopicName, itemName: routeItemName } = useParams<{ topicName?: string; itemName?: string }>();
+export default function ResearchTopicsPane() {
+  const itemRoute = useRouteParamsFor(RESEARCH_ITEM_VIEW_ID);
+  const topicRoute = useRouteParamsFor(RESEARCH_TOPIC_VIEW_ID);
+  const routeTopicName = itemRoute?.topicName ?? topicRoute?.topicName;
+  const routeItemName = itemRoute?.itemName;
   const selected: Selection | null = useMemo(
     () => (routeTopicName && routeItemName ? { topicName: routeTopicName, itemName: routeItemName } : null),
     [routeTopicName, routeItemName],
@@ -332,7 +333,7 @@ export default function ResearchTopicsView() {
 
   const { data, isLoading, error, mutate } = useTopics();
   const topics: TopicSummary[] = data?.topics ?? [];
-  const { openItem, closeItem, closeTopic } = useResearchNavigation();
+  const { openItem, closeItem, closeTopic } = useResearchLayoutNavigation();
   const navigate = useNavigate();
   // Explicitly false only: an unknown (loading) configuration shows no banner.
   const searchProviderMissing = useResearchConfiguration().data?.searchProviderAvailable === false;
@@ -496,7 +497,7 @@ export default function ResearchTopicsView() {
           data-testid="research-search-provider-banner"
         />
       )}
-      {inResearchDashboard && <ResearchAgentSessions selected={selected} onAgentChange={setAgentId} />}
+      <ResearchAgentSessions selected={selected} onAgentChange={setAgentId} />
 
       <div className="shrink-0 px-2 py-1.5 border-b border-primary/50">
         <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search dossiers…" aria-label="Search research" />

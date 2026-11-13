@@ -1,9 +1,8 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { getPanelBadge, setPanelBadge } from "@tokenring-ai/one-frontend/dock/panelBadges.ts";
-import type { DashboardDefinition, ViewDefinition, ViewParams } from "@tokenring-ai/one-frontend/dock/types.ts";
-import { createFakeDashboardApi, createFakePanelHandle, type FakeDashboardApi, renderView } from "@tokenring-ai/one-frontend/test/dock.tsx";
+import { defineView } from "@tokenring-ai/one-frontend/layout/define.ts";
+import { MessageSquare } from "lucide-react";
 import type React from "react";
 
 const PassThroughFocusTrap = ({ children }: { children: React.ReactNode }) => children;
@@ -108,26 +107,40 @@ void mock.module("@tokenring-ai/one-frontend/rpc.ts", () => ({
   },
 }));
 
-const { default: contribution } = await import("../app.tsx");
+const { default: layout } = await import("../layout.ts");
+const { default: viewsModule } = await import("../views.tsx");
+const { CORE_KINDS } = await import("@tokenring-ai/one-frontend/apps/kinds.ts");
+const { createLayoutRegistry } = await import("@tokenring-ai/one-frontend/layout/registry.ts");
+const { renderLayoutApp } = await import("@tokenring-ai/one-frontend/test/layout.tsx");
 const { clearItemDrafts, getItemDraft, resetResearchAgentSession, setItemDraft } = await import("../lib/researchStore.ts");
 
-const ROUTES = ["/research/:topicName?/:itemName?"];
-const viewById = (id: string) => contribution.views.find(view => view.id === id) as ViewDefinition<any>;
-const getView = (id: string) => contribution.views.find(view => view.id === id);
-const dashboard: DashboardDefinition = contribution.dashboards[0]!;
-
-function fakeApi(): FakeDashboardApi {
-  return createFakeDashboardApi({ dashboardId: "research", getView });
+function ChatStub() {
+  return <p>chat stub</p>;
 }
 
-function renderResearchView(viewId: string, params: ViewParams = {}, path = "/research", api = fakeApi()) {
-  const panel = createFakePanelHandle({ viewId, dashboardId: "research", panelId: `${viewId}:${JSON.stringify(params)}`, params });
-  return renderView(viewById(viewId), params, { api, panel, path, routes: ROUTES });
-}
+const chatView = defineView({
+  id: "chat",
+  kind: "agent",
+  title: params => params.agentId ?? "Chat",
+  icon: MessageSquare,
+  route: "agent/:agentId",
+  instanceKey: params => params.agentId ?? "",
+  component: ChatStub,
+});
 
-const pathname = () => screen.getAllByTestId("pathname")[0]?.textContent;
+const registry = createLayoutRegistry({ apps: layout.apps, views: [...viewsModule.views, chatView], kinds: [...CORE_KINDS, ...layout.kinds] });
 
-describe("Research dashboard views", () => {
+let current: ReturnType<typeof renderLayoutApp> | null = null;
+const renderResearch = (url = "/research") => {
+  current = renderLayoutApp({ registry, url });
+  return current;
+};
+const pathname = () => current?.location().pathname;
+const panelOpen = (key: string) => document.querySelector(`[data-panel="${key}"]`) !== null;
+const ITEM_KEY = "research-item:solid-state-batteries/summary";
+const hasUnsavedBadge = () => screen.queryAllByRole("img", { name: "Unsaved changes" }).length > 0;
+
+describe("Research app", () => {
   beforeEach(() => {
     localStorage.clear();
     clearItemDrafts();
@@ -157,10 +170,31 @@ describe("Research dashboard views", () => {
     todosState = undefined;
   });
 
+  describe("layout", () => {
+    it("keeps the old dashboard's identity and can host agent chats", () => {
+      const app = layout.apps[0]!;
+      expect(app).toMatchObject({ id: "research", path: "/research", label: "Research", group: "Build", shortLabel: "RE", defaultPinned: true });
+      expect(app.views).toContain("chat");
+      expect(registry.routes.resolve("/research")?.viewId).toBe("research-start");
+      expect(registry.routes.resolve("/research/solid-state-batteries")?.viewId).toBe("research-topic");
+      expect(registry.routes.resolve("/research/solid-state-batteries/summary")).toMatchObject({
+        viewId: "research-item",
+        params: { topicName: "solid-state-batteries", itemName: "summary" },
+      });
+    });
+
+    it("shows the landing for a bare topic URL and expands that topic in the navigator", async () => {
+      renderResearch("/research/solid-state-batteries");
+      // The app's own landing tab opens beside the topic's, as in marketplace.
+      await waitFor(() => expect(screen.getAllByText("Start researching").length).toBeGreaterThan(0));
+      expect(await screen.findByText("toc")).toBeInTheDocument();
+    });
+  });
+
   describe("topics navigator", () => {
     it("lists topics and their items once a topic is expanded", async () => {
       const user = userEvent.setup();
-      renderResearchView("research-topics");
+      renderResearch();
 
       expect(await screen.findByText("solid-state-batteries")).toBeInTheDocument();
       expect(screen.getByText("local-ai-tools")).toBeInTheDocument();
@@ -170,40 +204,28 @@ describe("Research dashboard views", () => {
       expect(screen.getByText("toc")).toBeInTheDocument();
     });
 
-    it("opens the item panel and navigates when an item is picked", async () => {
+    it("opens the dossier tab, navigates, and closes the landing when an item is picked", async () => {
       const user = userEvent.setup();
-      const { api } = renderResearchView("research-topics");
+      renderResearch();
 
       await user.click(await screen.findByText("solid-state-batteries"));
       await user.click(await screen.findByText("summary"));
 
-      expect(api.opened).toEqual([expect.objectContaining({ viewId: "research-item", params: { topicName: "solid-state-batteries", itemName: "summary" } })]);
       expect(pathname()).toBe("/research/solid-state-batteries/summary");
+      expect(await screen.findByText("Solid-state batteries are promising.")).toBeInTheDocument();
+      expect(panelOpen(ITEM_KEY)).toBe(true);
+      expect(panelOpen("research-start:_")).toBe(false);
+      expect(screen.queryByText("Start researching")).not.toBeInTheDocument();
     });
 
-    it("fills the landing panel instead of opening a second item panel", async () => {
-      const user = userEvent.setup();
-      const api = fakeApi();
-      api.panels.push({ panelId: "research-item:new", viewId: "research-item", params: {}, title: "Research" });
-      renderResearchView("research-topics", {}, "/research", api);
-
-      await user.click(await screen.findByText("solid-state-batteries"));
-      await user.click(await screen.findByText("summary"));
-
-      expect(api.opened).toHaveLength(0);
-      expect(api.panels[0]!.params).toEqual({ topicName: "solid-state-batteries", itemName: "summary" });
-    });
-
-    it("expands the topic named by the URL and highlights the open item", async () => {
-      renderResearchView("research-topics", {}, "/research/solid-state-batteries/summary");
-      // Auto-expanded from the route, so the items are listed without a click.
-      expect(await screen.findByText("summary")).toBeInTheDocument();
-      expect(screen.getByText("toc")).toBeInTheDocument();
+    it("expands the topic named by the URL", async () => {
+      renderResearch("/research/solid-state-batteries/summary");
+      expect(await screen.findByText("toc")).toBeInTheDocument();
     });
 
     it("creates a new topic", async () => {
       const user = userEvent.setup();
-      renderResearchView("research-topics");
+      renderResearch();
 
       await user.click(screen.getByTitle("New topic"));
       await user.type(screen.getByPlaceholderText("solid-state-batteries"), "quantum-sensors");
@@ -214,7 +236,7 @@ describe("Research dashboard views", () => {
 
     it("creates a research item in a topic and opens it", async () => {
       const user = userEvent.setup();
-      const { api } = renderResearchView("research-topics");
+      renderResearch();
 
       await user.click(await screen.findByRole("button", { name: "New item in solid-state-batteries" }));
       const dialog = screen.getByRole("dialog");
@@ -222,36 +244,26 @@ describe("Research dashboard views", () => {
       await user.click(within(dialog).getByRole("button", { name: "Save" }));
 
       await waitFor(() => expect(createItem).toHaveBeenCalledWith(expect.objectContaining({ topicName: "solid-state-batteries", name: "risks" })));
-      await waitFor(() =>
-        expect(api.opened).toEqual([expect.objectContaining({ viewId: "research-item", params: { topicName: "solid-state-batteries", itemName: "risks" } })]),
-      );
-      expect(pathname()).toBe("/research/solid-state-batteries/risks");
+      await waitFor(() => expect(pathname()).toBe("/research/solid-state-batteries/risks"));
     });
 
-    it("deletes an item after confirmation and closes its panel", async () => {
+    it("deletes an item after confirmation, closing its tab and leaving its URL", async () => {
       const user = userEvent.setup();
-      const api = fakeApi();
-      api.panels.push({
-        panelId: "research-item:solid-state-batteries/summary",
-        viewId: "research-item",
-        params: { topicName: "solid-state-batteries", itemName: "summary" },
-        title: "summary",
-      });
-      renderResearchView("research-topics", {}, "/research/solid-state-batteries/summary", api);
+      renderResearch("/research/solid-state-batteries/summary");
+      await screen.findByText("Solid-state batteries are promising.");
 
       await user.click(await screen.findByRole("button", { name: "Delete item summary" }));
       await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
 
       await waitFor(() => expect(deleteItem).toHaveBeenCalledWith({ topicName: "solid-state-batteries", name: "summary" }));
-      expect(api.closed).toEqual(["research-item:solid-state-batteries/summary"]);
+      await waitFor(() => expect(panelOpen(ITEM_KEY)).toBe(false));
       await waitFor(() => expect(pathname()).toBe("/research"));
     });
 
     it("warns, with a link to configuration, when no web search provider is configured", async () => {
       const user = userEvent.setup();
       configurationState = { agentTypes: ["research"], searchProviderAvailable: false };
-      const panel = createFakePanelHandle({ viewId: "research-topics", dashboardId: "research", panelId: "research-topics", params: {} });
-      renderView(viewById("research-topics"), {}, { api: fakeApi(), panel, path: "/research", routes: [...ROUTES, "/configuration"] });
+      renderResearch();
 
       expect(await screen.findByText("No web search provider")).toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "Configure" }));
@@ -259,57 +271,43 @@ describe("Research dashboard views", () => {
     });
 
     it("shows no search provider warning when one is configured", async () => {
-      renderResearchView("research-topics");
+      renderResearch();
       await screen.findByText("solid-state-batteries");
       expect(screen.queryByText("No web search provider")).not.toBeInTheDocument();
     });
 
-    it("keeps the dossier's panel and draft when the delete fails", async () => {
+    it("keeps the dossier's tab and draft when the delete fails", async () => {
       const user = userEvent.setup();
       deleteItem.mockImplementationOnce(async () => ({ success: false }));
-      const api = fakeApi();
-      api.panels.push({
-        panelId: "research-item:solid-state-batteries/summary",
-        viewId: "research-item",
-        params: { topicName: "solid-state-batteries", itemName: "summary" },
-        title: "summary",
-      });
       setItemDraft("solid-state-batteries/summary", "edited");
-      renderResearchView("research-topics", {}, "/research/solid-state-batteries/summary", api);
+      renderResearch("/research/solid-state-batteries/summary");
 
       await user.click(await screen.findByRole("button", { name: "Delete item summary" }));
       await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
 
       await waitFor(() => expect(deleteItem).toHaveBeenCalled());
       expect(screen.getByRole("dialog")).toBeInTheDocument();
-      expect(api.closed).toEqual([]);
+      expect(panelOpen(ITEM_KEY)).toBe(true);
       expect(getItemDraft("solid-state-batteries/summary")).toBe("edited");
       expect(pathname()).toBe("/research/solid-state-batteries/summary");
     });
 
-    it("keeps the topic's panels open when the delete fails", async () => {
+    it("keeps the topic's tabs open when the delete fails", async () => {
       const user = userEvent.setup();
       deleteTopic.mockImplementationOnce(async () => ({ success: false }));
-      const api = fakeApi();
-      api.panels.push({
-        panelId: "research-item:solid-state-batteries/summary",
-        viewId: "research-item",
-        params: { topicName: "solid-state-batteries", itemName: "summary" },
-        title: "summary",
-      });
-      renderResearchView("research-topics", {}, "/research/solid-state-batteries/summary", api);
+      renderResearch("/research/solid-state-batteries/summary");
 
       await user.click(await screen.findByRole("button", { name: "Delete topic solid-state-batteries" }));
       await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
 
       await waitFor(() => expect(deleteTopic).toHaveBeenCalled());
       expect(screen.getByRole("dialog")).toBeInTheDocument();
-      expect(api.closed).toEqual([]);
+      expect(panelOpen(ITEM_KEY)).toBe(true);
     });
 
     it("deletes a topic after confirmation", async () => {
       const user = userEvent.setup();
-      renderResearchView("research-topics");
+      renderResearch();
 
       await user.click(await screen.findByRole("button", { name: "Delete topic local-ai-tools" }));
       await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
@@ -317,36 +315,29 @@ describe("Research dashboard views", () => {
       await waitFor(() => expect(deleteTopic).toHaveBeenCalledWith({ name: "local-ai-tools" }));
     });
 
-    it("deleting a topic closes every open dossier in it and drops their drafts and badges", async () => {
+    it("deleting a topic closes every open dossier in it and drops their drafts", async () => {
       const user = userEvent.setup();
-      const api = fakeApi();
-      const panel = (topicName: string, itemName: string) => ({
-        panelId: `research-item:${topicName}/${itemName}`,
-        viewId: "research-item",
-        params: { topicName, itemName },
-        title: itemName,
-      });
-      api.panels.push(panel("solid-state-batteries", "summary"), panel("solid-state-batteries", "toc"), panel("local-ai-tools", "ollama"));
-      for (const open of api.panels) setPanelBadge(open.panelId, { tone: "warning", title: "Unsaved changes" });
+      renderResearch("/research/local-ai-tools/ollama");
+      await waitFor(() => expect(panelOpen("research-item:local-ai-tools/ollama")).toBe(true));
+      current!.go("/research/solid-state-batteries/summary");
+      current!.go("/research/solid-state-batteries/toc");
+      await waitFor(() => expect(panelOpen("research-item:solid-state-batteries/summary")).toBe(true));
+      await waitFor(() => expect(panelOpen("research-item:solid-state-batteries/toc")).toBe(true));
       setItemDraft("solid-state-batteries/summary", "edited");
       setItemDraft("solid-state-batteries/toc", "edited too");
       setItemDraft("local-ai-tools/ollama", "kept");
-      // The URL names only one of the topic's dossiers.
-      renderResearchView("research-topics", {}, "/research/solid-state-batteries/toc", api);
 
       await user.click(await screen.findByRole("button", { name: "Delete topic solid-state-batteries" }));
       await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
 
       await waitFor(() => expect(deleteTopic).toHaveBeenCalledWith({ name: "solid-state-batteries" }));
-      await waitFor(() => expect(api.closed).toEqual(["research-item:solid-state-batteries/summary", "research-item:solid-state-batteries/toc"]));
+      await waitFor(() => expect(panelOpen("research-item:solid-state-batteries/summary")).toBe(false));
+      expect(panelOpen("research-item:solid-state-batteries/toc")).toBe(false);
       expect(getItemDraft("solid-state-batteries/summary")).toBeNull();
       expect(getItemDraft("solid-state-batteries/toc")).toBeNull();
-      expect(getPanelBadge("research-item:solid-state-batteries/summary")).toBeNull();
-      expect(getPanelBadge("research-item:solid-state-batteries/toc")).toBeNull();
       // Another topic's dossier is untouched.
       expect(getItemDraft("local-ai-tools/ollama")).toBe("kept");
-      expect(getPanelBadge("research-item:local-ai-tools/ollama")).not.toBeNull();
-      setPanelBadge("research-item:local-ai-tools/ollama", null);
+      expect(panelOpen("research-item:local-ai-tools/ollama")).toBe(true);
       await waitFor(() => expect(pathname()).toBe("/research"));
     });
   });
@@ -354,7 +345,7 @@ describe("Research dashboard views", () => {
   describe("navigator search, export and progress", () => {
     it("searches across topics and opens a result", async () => {
       const user = userEvent.setup();
-      const { api } = renderResearchView("research-topics");
+      renderResearch();
 
       await user.type(screen.getByLabelText("Search research"), "promising");
       const results = await screen.findByRole("list", { name: "Search results" });
@@ -365,7 +356,7 @@ describe("Research dashboard views", () => {
       expect(screen.queryByText("local-ai-tools")).not.toBeInTheDocument();
 
       await user.click(within(results).getByRole("button", { name: /summary/ }));
-      expect(api.opened).toEqual([expect.objectContaining({ viewId: "research-item", params: { topicName: "solid-state-batteries", itemName: "summary" } })]);
+      await waitFor(() => expect(pathname()).toBe("/research/solid-state-batteries/summary"));
 
       await user.clear(screen.getByLabelText("Search research"));
       expect(await screen.findByText("local-ai-tools")).toBeInTheDocument();
@@ -374,7 +365,7 @@ describe("Research dashboard views", () => {
     it("shows an empty state when nothing matches", async () => {
       const user = userEvent.setup();
       searchItems.mockImplementationOnce(async () => ({ results: [] }));
-      renderResearchView("research-topics");
+      renderResearch();
 
       await user.type(screen.getByLabelText("Search research"), "zzz");
       expect(await screen.findByText("No matching dossiers")).toBeInTheDocument();
@@ -382,19 +373,17 @@ describe("Research dashboard views", () => {
 
     it("exports a whole topic as Markdown", async () => {
       const user = userEvent.setup();
-      renderResearchView("research-topics");
+      renderResearch();
 
       await user.click(await screen.findByRole("button", { name: "Export topic solid-state-batteries" }));
       await waitFor(() => expect(downloadTextFile).toHaveBeenCalledWith("solid-state-batteries.md", "# topic", "text/markdown"));
       expect(exportTopic).toHaveBeenCalledWith({ topicName: "solid-state-batteries" });
     });
 
-    it("shows the attached research agent's todos in the navigator and the landing panel", async () => {
+    it("shows the attached research agent's todos in the navigator and the landing tab", async () => {
       const user = userEvent.setup();
-      const api = fakeApi();
       todosState = { status: "success", todos: [{ id: "t1", content: "Survey vendors", status: "in_progress" }] };
-      renderResearchView("research-topics", {}, "/research", api);
-      renderResearchView("research-item", {}, "/research", api);
+      renderResearch();
       expect(screen.queryByText("Survey vendors")).not.toBeInTheDocument();
 
       await user.type(await screen.findByLabelText("Research query"), "vendors");
@@ -405,19 +394,16 @@ describe("Research dashboard views", () => {
     });
   });
 
-  describe("landing panel", () => {
-    it("shows the landing empty state when the panel has no item", async () => {
-      renderResearchView("research-item", {});
+  describe("landing tab", () => {
+    it("shows the landing empty state at /research", async () => {
+      renderResearch();
       expect(await screen.findByText("Start researching")).toBeInTheDocument();
       expect(screen.getByLabelText("Research query")).toBeInTheDocument();
     });
 
-    it("starts a research agent from the landing prompt and docks its chat", async () => {
+    it("starts a research agent from the landing prompt and attaches its chat", async () => {
       const user = userEvent.setup();
-      const api = fakeApi();
-      // The navigator owns the agent session; the landing panel drives it through the store.
-      renderResearchView("research-topics", {}, "/research", api);
-      renderResearchView("research-item", {}, "/research", api);
+      renderResearch();
 
       await user.type(await screen.findByLabelText("Research query"), "Solid-state battery timeline");
       await user.click(screen.getByRole("button", { name: "Start research agent" }));
@@ -427,27 +413,26 @@ describe("Research dashboard views", () => {
         agentId: "research-agent-1",
         input: { from: "Research app", message: "/deep research Solid-state battery timeline" },
       });
-      await waitFor(() => expect(api.opened.some(open => open.viewId === "chat" && open.params.agentId === "research-agent-1")).toBe(true));
+      await waitFor(() => expect(panelOpen("chat:research-agent-1")).toBe(true));
     });
   });
 
-  describe("item panel", () => {
-    const itemParams = { topicName: "solid-state-batteries", itemName: "summary" };
+  describe("dossier tab", () => {
     const itemPath = "/research/solid-state-batteries/summary";
 
     it("opens a dossier in preview mode", async () => {
-      const { panel } = renderResearchView("research-item", itemParams, itemPath);
+      renderResearch(itemPath);
 
       await waitFor(() => expect(getItem).toHaveBeenCalledWith({ topicName: "solid-state-batteries", name: "summary" }));
       expect(await screen.findByText("Solid-state batteries are promising.")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /Preview/i })).toHaveAttribute("aria-pressed", "true");
       expect(screen.queryByLabelText("Markdown editor")).not.toBeInTheDocument();
-      await waitFor(() => expect(panel.title).toBe("summary"));
+      expect(screen.getByRole("tab", { name: /summary/ })).toBeInTheDocument();
     });
 
     it("edits in the markdown editor, badges the tab and saves", async () => {
       const user = userEvent.setup();
-      const { panel } = renderResearchView("research-item", itemParams, itemPath);
+      renderResearch(itemPath);
 
       expect(await screen.findByText("Solid-state batteries are promising.")).toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: /Edit/i }));
@@ -455,19 +440,19 @@ describe("Research dashboard views", () => {
       await user.clear(editor);
       await user.type(editor, "# Updated summary");
 
-      await waitFor(() => expect(getPanelBadge(panel.panelId)?.title).toBe("Unsaved changes"));
+      await waitFor(() => expect(hasUnsavedBadge()).toBe(true));
 
       const saveButton = screen.getByRole("button", { name: "Save" });
       expect(saveButton).not.toBeDisabled();
       await user.click(saveButton);
 
       await waitFor(() => expect(updateItem).toHaveBeenCalledWith({ topicName: "solid-state-batteries", name: "summary", content: "# Updated summary" }));
-      await waitFor(() => expect(getPanelBadge(panel.panelId)).toBeNull());
+      await waitFor(() => expect(hasUnsavedBadge()).toBe(false));
     });
 
-    it("keeps an unsaved draft when the panel is closed and reopened", async () => {
+    it("keeps an unsaved draft when the app is closed and reopened", async () => {
       const user = userEvent.setup();
-      const first = renderResearchView("research-item", itemParams, itemPath);
+      const first = renderResearch(itemPath);
       await first.findByText("Solid-state batteries are promising.");
       await user.click(first.getByRole("button", { name: /Edit/i }));
       const editor = await first.findByLabelText("Markdown editor");
@@ -475,13 +460,13 @@ describe("Research dashboard views", () => {
       await user.type(editor, "# Unsaved draft");
       first.unmount();
 
-      const second = renderResearchView("research-item", itemParams, itemPath);
+      const second = renderResearch(itemPath);
       await waitFor(() => expect(second.getByLabelText("Markdown editor")).toHaveValue("# Unsaved draft"));
     });
 
-    it("saves ⌘/Ctrl+S while the panel is active", async () => {
+    it("saves with Ctrl+S while the tab is active", async () => {
       const user = userEvent.setup();
-      renderResearchView("research-item", itemParams, itemPath);
+      renderResearch(itemPath);
 
       await screen.findByText("Solid-state batteries are promising.");
       await user.click(screen.getByRole("button", { name: /Edit/i }));
@@ -496,7 +481,7 @@ describe("Research dashboard views", () => {
     it("offers a retry when the dossier cannot be loaded", async () => {
       const user = userEvent.setup();
       getItemResult = null;
-      renderResearchView("research-item", itemParams, itemPath);
+      renderResearch(itemPath);
 
       expect(await screen.findByText("Research item not found")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Close panel" })).toBeInTheDocument();
@@ -506,26 +491,18 @@ describe("Research dashboard views", () => {
       expect(await screen.findByText("Solid-state batteries are promising.")).toBeInTheDocument();
     });
 
-    it("closes the panel from the not-found state", async () => {
+    it("closes the tab from the not-found state", async () => {
       const user = userEvent.setup();
       getItemResult = null;
-      const { panel } = renderResearchView("research-item", itemParams, itemPath);
+      renderResearch(itemPath);
 
       await user.click(await screen.findByRole("button", { name: "Close panel" }));
-      expect(panel.closed).toBe(true);
+      await waitFor(() => expect(panelOpen(ITEM_KEY)).toBe(false));
     });
 
-    it("saves a copy under a new name and the panel follows it", async () => {
+    it("saves a copy under a new name and the tab follows it", async () => {
       const user = userEvent.setup();
-      const api = fakeApi();
-      api.panels.push({ panelId: "research-item:solid-state-batteries/summary", viewId: "research-item", params: itemParams, title: "summary" });
-      const panel = createFakePanelHandle({
-        viewId: "research-item",
-        dashboardId: "research",
-        panelId: "research-item:solid-state-batteries/summary",
-        params: itemParams,
-      });
-      renderView(viewById("research-item"), itemParams, { api, panel, path: itemPath, routes: ROUTES });
+      renderResearch(itemPath);
 
       await screen.findByText("Solid-state batteries are promising.");
       await user.click(screen.getByRole("button", { name: "Save As…" }));
@@ -536,22 +513,15 @@ describe("Research dashboard views", () => {
       await user.click(within(dialog).getByRole("button", { name: "Save" }));
 
       await waitFor(() => expect(createItem).toHaveBeenCalledWith(expect.objectContaining({ topicName: "solid-state-batteries", name: "summary-v2" })));
-      await waitFor(() => expect(api.panels[0]!.params).toEqual({ topicName: "solid-state-batteries", itemName: "summary-v2" }));
-      expect(pathname()).toBe("/research/solid-state-batteries/summary-v2");
+      await waitFor(() => expect(pathname()).toBe("/research/solid-state-batteries/summary-v2"));
+      expect(panelOpen(ITEM_KEY)).toBe(false);
+      expect(panelOpen("research-item:solid-state-batteries/summary-v2")).toBe(true);
     });
 
-    it("renames / moves the dossier; the panel, draft and URL follow it", async () => {
+    it("renames / moves the dossier; the tab, draft and URL follow it", async () => {
       const user = userEvent.setup();
-      const api = fakeApi();
-      api.panels.push({ panelId: "research-item:solid-state-batteries/summary", viewId: "research-item", params: itemParams, title: "summary" });
-      const panel = createFakePanelHandle({
-        viewId: "research-item",
-        dashboardId: "research",
-        panelId: "research-item:solid-state-batteries/summary",
-        params: itemParams,
-      });
       setItemDraft("solid-state-batteries/summary", "draft text");
-      renderView(viewById("research-item"), itemParams, { api, panel, path: itemPath, routes: ROUTES });
+      renderResearch(itemPath);
 
       await screen.findByLabelText("Markdown editor");
       await user.click(screen.getByRole("button", { name: "Rename or move item" }));
@@ -567,8 +537,9 @@ describe("Research dashboard views", () => {
       await waitFor(() =>
         expect(renameItem).toHaveBeenCalledWith({ topicName: "solid-state-batteries", name: "summary", newTopicName: "local-ai-tools", newName: "overview" }),
       );
-      await waitFor(() => expect(api.panels[0]!.params).toEqual({ topicName: "local-ai-tools", itemName: "overview" }));
-      expect(pathname()).toBe("/research/local-ai-tools/overview");
+      await waitFor(() => expect(pathname()).toBe("/research/local-ai-tools/overview"));
+      expect(panelOpen(ITEM_KEY)).toBe(false);
+      expect(panelOpen("research-item:local-ai-tools/overview")).toBe(true);
       expect(getItemDraft("local-ai-tools/overview")).toBe("draft text");
       expect(getItemDraft("solid-state-batteries/summary")).toBeNull();
       expect(createItem).not.toHaveBeenCalled();
@@ -579,7 +550,7 @@ describe("Research dashboard views", () => {
       renameItem.mockImplementationOnce(async () => {
         throw new Error('Item "toc" already exists');
       });
-      renderResearchView("research-item", itemParams, itemPath);
+      renderResearch(itemPath);
 
       await screen.findByText("Solid-state batteries are promising.");
       await user.click(screen.getByRole("button", { name: "Rename or move item" }));
@@ -597,17 +568,17 @@ describe("Research dashboard views", () => {
     it("exports the dossier on screen, unsaved edits included", async () => {
       const user = userEvent.setup();
       setItemDraft("solid-state-batteries/summary", "# Edited");
-      renderResearchView("research-item", itemParams, itemPath);
+      renderResearch(itemPath);
 
       await screen.findByLabelText("Markdown editor");
       await user.click(screen.getByRole("button", { name: "Export item as Markdown" }));
       expect(downloadTextFile).toHaveBeenCalledWith("summary.md", "# Edited", "text/markdown");
     });
 
-    it("keeps the panel open when the delete fails", async () => {
+    it("keeps the tab open when the delete fails", async () => {
       const user = userEvent.setup();
       deleteItem.mockImplementationOnce(async () => ({ success: false }));
-      const { panel } = renderResearchView("research-item", itemParams, itemPath);
+      renderResearch(itemPath);
 
       await screen.findByText("Solid-state batteries are promising.");
       await user.click(screen.getByRole("button", { name: "Delete item" }));
@@ -615,7 +586,7 @@ describe("Research dashboard views", () => {
 
       await waitFor(() => expect(deleteItem).toHaveBeenCalled());
       expect(screen.getByRole("dialog")).toBeInTheDocument();
-      expect(panel.closed).toBe(false);
+      expect(panelOpen(ITEM_KEY)).toBe(true);
     });
 
     it("keeps the draft when saving a dossier deleted elsewhere conflicts", async () => {
@@ -623,7 +594,7 @@ describe("Research dashboard views", () => {
       updateItem.mockImplementationOnce(async () => {
         throw new Error('Item "summary" no longer exists in topic "solid-state-batteries"');
       });
-      const { panel } = renderResearchView("research-item", itemParams, itemPath);
+      renderResearch(itemPath);
 
       await screen.findByText("Solid-state batteries are promising.");
       await user.click(screen.getByRole("button", { name: /Edit/i }));
@@ -633,48 +604,20 @@ describe("Research dashboard views", () => {
 
       await waitFor(() => expect(updateItem).toHaveBeenCalled());
       expect(getItemDraft("solid-state-batteries/summary")).toContain(" more");
-      expect(getPanelBadge(panel.panelId)?.title).toBe("Unsaved changes");
+      expect(hasUnsavedBadge()).toBe(true);
     });
 
-    it("deletes the dossier after confirmation and closes the panel", async () => {
+    it("deletes the dossier after confirmation and closes the tab", async () => {
       const user = userEvent.setup();
-      const { panel } = renderResearchView("research-item", itemParams, itemPath);
+      renderResearch(itemPath);
 
       await screen.findByText("Solid-state batteries are promising.");
       await user.click(screen.getByRole("button", { name: "Delete item" }));
       await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
 
       await waitFor(() => expect(deleteItem).toHaveBeenCalledWith({ topicName: "solid-state-batteries", name: "summary" }));
-      await waitFor(() => expect(panel.closed).toBe(true));
-    });
-  });
-
-  describe("dashboard definition", () => {
-    it("opens the dossier named by the route in the main area", () => {
-      const api = fakeApi();
-      api.panels.push({ panelId: "research-topics", viewId: "research-topics", params: {}, title: "Research topics" });
-      const match = (pathname: string, params: Record<string, string | undefined>) => ({ pathname, params, searchParams: new URLSearchParams() });
-
-      dashboard.onNavigate?.(match("/research", {}), api);
-      dashboard.onNavigate?.(match("/research/solid-state-batteries", { topicName: "solid-state-batteries" }), api);
-      dashboard.onNavigate?.(match("/research/solid-state-batteries/summary", { topicName: "solid-state-batteries", itemName: "summary" }), api);
-      // Idempotent: the same route focuses the open panel instead of adding another.
-      dashboard.onNavigate?.(match("/research/solid-state-batteries/summary", { topicName: "solid-state-batteries", itemName: "summary" }), api);
-
-      expect(api.opened.map(open => [open.viewId, open.params])).toEqual([["research-item", { topicName: "solid-state-batteries", itemName: "summary" }]]);
-      expect(api.opened[0]!.options).toMatchObject({ position: "right", referencePanelId: "research-topics" });
-      expect(api.panels.filter(p => p.viewId === "research-item")).toHaveLength(1);
-    });
-
-    it("maps the active panel back to a URL", () => {
-      const match = { pathname: "/research", params: {}, searchParams: new URLSearchParams() };
-      const path = (viewId: string, params: ViewParams = {}) => dashboard.pathForActivePanel?.({ panelId: viewId, viewId, params }, match);
-      expect(path("research-item", { topicName: "solid-state-batteries", itemName: "summary" })).toBe("/research/solid-state-batteries/summary");
-      expect(path("research-item")).toBe("/research");
-      expect(path("research-topics")).toBeNull();
-      expect(dashboard.documentTitle?.({ pathname: "/research", params: { itemName: "summary" }, searchParams: new URLSearchParams() })).toBe(
-        "summary · Research",
-      );
+      await waitFor(() => expect(panelOpen(ITEM_KEY)).toBe(false));
+      await waitFor(() => expect(pathname()).toBe("/research"));
     });
   });
 });
