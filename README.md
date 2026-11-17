@@ -19,7 +19,7 @@ todos, and the research tools to produce thorough multi-file research dossiers.
 
 ### Integration Points
 
-- **@tokenring-ai/chat**: Registers seven research tools with the ChatService
+- **@tokenring-ai/chat**: Registers eight research tools with the ChatService
 - **@tokenring-ai/rpc**: Exposes `/rpc/research` endpoint for the Research web app
 - **@tokenring-ai/agent**: Attaches `ResearchState` to agents with configurable
   research directories
@@ -49,6 +49,11 @@ todos, and the research tools to produce thorough multi-file research dossiers.
   the attached research agent's todo list (also on the landing panel); dossier panels
   offer rename / move (open panels, unsaved drafts and the URL follow the file) and a
   Markdown download of what is on screen
+- **Structured Sources**: An item can carry `sources` (URL, title, publisher, access date) as
+  YAML frontmatter, shown as a separate, editable "Sources" list in the item panel
+- **Topic Tags**: Topics carry optional client / project tags, filterable in the navigator
+- **Export Brief**: One Markdown document per topic with a numbered, de-duplicated
+  "References" section built from the items' sources
 - **Selected Item Attachments**: A lifecycle hook automatically attaches the currently
   selected research item to new chat messages
 
@@ -82,6 +87,7 @@ run from another agent type, a background research agent is started.
 | `topic_list`   | Research/list topics  | List the research topics (collections of related markdown items) in the research directory |
 | `topic_create` | Research/create topic | Create a new, empty research topic (a named collection of related markdown items) |
 | `topic_delete` | Research/delete topic | Delete a research topic and all of the markdown items it contains |
+| `topic_setTags`| Research/set topic tags | Set the tags (client or project) of a topic, replacing its existing tags |
 | `item_list`    | Research/list items   | List the named markdown research items within a topic          |
 | `item_read`    | Research/read item    | Read the markdown content of a research item within a topic    |
 | `item_write`   | Research/write item   | Create or overwrite a research item (a single markdown file) within a topic. The topic is created automatically if it doesn't already exist. Use this to save research notes, summaries, and deep-dives so they can be referenced later or viewed by the user. |
@@ -126,7 +132,15 @@ No input parameters.
 |------------|----------|--------------------------------------------------------------------------------|
 | `topicName`| `string` | Name of the topic this item belongs to; created automatically if it doesn't exist |
 | `name`     | `string` | Name of the item to create or update                                           |
-| `content`  | `string` | Full markdown content of the research item                                     |
+| `content`  | `string` | Full markdown content of the research item (no frontmatter)                     |
+| `sources`  | `{url, title?, publisher?, accessed?}[]` | Optional. Structured sources, replacing those recorded earlier; omit to keep the existing ones, `[]` to clear them. `url` must be `http(s)`; `accessed` is `YYYY-MM-DD` and defaults to today |
+
+#### `topic_setTags`
+
+| Parameter  | Type       | Description                                                                 |
+|------------|------------|-----------------------------------------------------------------------------|
+| `topicName`| `string`   | Name of an existing topic                                                   |
+| `tags`     | `string[]` | The complete tag list; trimmed, lowercased, de-duplicated, at most 10 tags of 32 characters |
 
 #### `item_delete`
 
@@ -134,6 +148,104 @@ No input parameters.
 |------------|----------|------------------------------------------|
 | `topicName`| `string` | Name of the topic the item belongs to    |
 | `name`     | `string` | Name of the item to delete               |
+
+### File Format
+
+Items are plain Markdown files. Sources, when recorded, live in optional YAML frontmatter:
+
+```markdown
+---
+sources:
+  - url: https://acme.example/annual-report-2025
+    title: Annual report 2025
+    publisher: ACME Corp
+    accessed: 2026-11-16
+---
+# ACME profile
+
+...
+```
+
+- Files without frontmatter work exactly as before; nothing is migrated, and writing without
+  `sources` leaves such a file byte-for-byte as given.
+- `item_read` and the `getItem` RPC return `{ content, sources }` separately; `content` is the
+  Markdown without the frontmatter. Writing re-emits the frontmatter. A write that omits
+  `sources` keeps the sources already on disk.
+- A malformed frontmatter block never breaks reading: the item comes back with the raw file text
+  as `content`, no sources, and a `warning` (shown as a banner in the item panel).
+- Content search matches the Markdown body only, not frontmatter (so source URLs are not matched).
+- Rename / move carries the file, and so its sources, unchanged.
+
+Topic tags live in a small sidecar file inside the topic folder, `<topic>/.topic.yaml`:
+
+```yaml
+tags:
+  - acme
+  - due diligence
+```
+
+It is optional (untagged topics have none; clearing the tags deletes it) and is not an item.
+`listTopics` / `streamTopics` include `tags` for each topic; `setTopicTags` (RPC) and `topic_setTags`
+(tool) replace them.
+
+### Export
+
+`exportTopic` is the plain concatenation of a topic's items. `exportBrief` builds a client-ready
+brief; in the topic list the **Export** menu (the file icon on a topic) offers **Markdown (.md)**,
+**Word (.docx)**, **PDF (.pdf)** and **Copy Markdown** (clipboard). The same brief content goes into
+every format: the items in name order under their name as a heading, a `Sources: [1], [3]`
+pointer line after items that have sources, and a final numbered **References** section built from
+all items' sources, de-duplicated by URL (the first title and publisher win), each with title,
+publisher, access date and the URL.
+
+`exportBrief` takes `{ topicName, format? }` with `format` one of `"md"` (default), `"docx"`,
+`"pdf"`. Leaving `format` out returns exactly the original shape. Word and PDF return it base64
+encoded; the browser turns that into a file download:
+
+| Format | Result |
+|--------|--------|
+| `md` | `{ fileName: "<topic>-brief.md", content, itemCount, sourceCount }` |
+| `docx`, `pdf` | `{ fileName: "<topic>-brief.<ext>", mimeType, contentBase64, itemCount, sourceCount, warnings: string[] }` |
+
+`warnings` lists anything the document could not show faithfully; the UI shows them after the
+export.
+
+**What Word and PDF render.** Item Markdown is parsed with `marked`: headings (nested one level
+below the item's own heading), paragraphs, bold, italic, strikethrough, inline code, bullet,
+numbered, nested and task lists, block quotes, fenced and indented code blocks, horizontal rules
+and links (`http(s)` and `mailto:` only; other schemes keep their text without a link). The title
+is the topic name, followed by a line with the export date, tags and dossier count. Pages are US
+Letter with 1 inch margins and a "Page n of N" footer; the References section starts on a new
+page.
+
+**Limits.**
+
+- Images are not embedded; the alt text is shown as `[image: alt]` and the export warns.
+- Tables are real tables in Word and PDF (bordered, wrapped cells, header row repeated in Word; in the PDF a row that
+  does not fit moves to the next page). Column widths follow the content.
+- Raw HTML is reduced to its text.
+- The PDF uses the built-in Helvetica and Courier fonts, which only cover Western European
+  (WinAnsi) characters. Anything else (CJK, Cyrillic, emoji, ...) is replaced with `?` and
+  reported in `warnings`; use the Word export to keep such text. The Word file keeps all Unicode.
+- Ordered lists in Word restart at 1 whatever their start number; the PDF honours the start number.
+- The PDF does not hyphenate; a word wider than the line (a long URL) is broken at the margin.
+- No fonts are loaded from disk (`pdf-lib` and `docx` are pure JavaScript), so the exports work
+  from the compiled backend binary.
+
+The Word and PDF code lives in `export/` and is server-only: `rpc/schema.ts` must not import it
+(the browser bundle would break). It is loaded on first use.
+
+### Editing sources
+
+Under an item's text (in both preview and edit mode) the **Sources** list has **Add source** and
+per-row edit and remove buttons. The compact form asks for a URL (required, must be a full
+`http://` or `https://` URL and not already listed), optional title and publisher, and the accessed
+date (defaults to today). Every change saves the complete list through `updateItem` with `sources`
+(removing the last one writes `sources: []`). The item's text is sent exactly as it is on disk
+(re-read just before saving), so the body is never altered and never overwritten by an unsaved
+editor draft: unsaved text edits stay in the editor as a draft and the confirmation says so.
+Removing a source shows an **Undo** link for a few seconds that writes the previous list back.
+Sources hand-written without an `accessed` date get today's date when the list is saved.
 
 ### Config-Defined Tool
 
@@ -340,7 +452,7 @@ The plugin (`plugin/research/plugin.ts`) defines `install` and `reconfigure`:
 
 1. Adds `ResearchService` to the app.
 2. When `AgentLifecycleService` becomes available, registers the `addSelectedItem` hook.
-3. When `ChatService` becomes available, registers the seven research tools.
+3. When `ChatService` becomes available, registers the eight research tools.
 4. When `RpcService` becomes available, registers the `/rpc/research` endpoint.
 
 **`reconfigure(app, config)`:**

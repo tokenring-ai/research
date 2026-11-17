@@ -4,6 +4,7 @@ import { markdownLinkComponents } from "@tokenring-ai/one-frontend/components/ch
 import ConfirmModal from "@tokenring-ai/one-frontend/components/ui/ConfirmModal.tsx";
 import EditorSaveBar from "@tokenring-ai/one-frontend/components/ui/EditorSaveBar.tsx";
 import EmptyState from "@tokenring-ai/one-frontend/components/ui/EmptyState.tsx";
+import ErrorBanner from "@tokenring-ai/one-frontend/components/ui/ErrorBanner.tsx";
 import LoadingState from "@tokenring-ai/one-frontend/components/ui/LoadingState.tsx";
 import SaveAsModal from "@tokenring-ai/one-frontend/components/ui/SaveAsModal.tsx";
 import { toastManager } from "@tokenring-ai/one-frontend/components/ui/toast.tsx";
@@ -18,6 +19,7 @@ import { downloadTextFile } from "@tokenring-ai/one-frontend/lib/transcriptExpor
 import { runOrConfirm } from "@tokenring-ai/one-frontend/lib/uiPreferences.ts";
 import { researchRPCClient, useItems, useTopics } from "@tokenring-ai/one-frontend/rpc.ts";
 import { useMonacoTheme } from "@tokenring-ai/one-frontend/theme/bridges/useMonacoTheme.ts";
+import type { Source } from "@tokenring-ai/research/sources";
 import formatError from "@tokenring-ai/utility/error/formatError";
 import { Download, Eye, FileText, FolderInput, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -26,8 +28,17 @@ import remarkGfm from "remark-gfm";
 import { NAME_PATTERN, researchItemKey } from "../lib/paths.ts";
 import { getItemDraft, setItemDraft, useItemDraft } from "../lib/researchStore.ts";
 import { useResearchLayoutNavigation } from "../lib/useResearchLayoutNavigation.ts";
+import SourcesList from "./SourcesList.tsx";
 
-function DossierPreview({ content }: { content: string }) {
+function DossierPreview({
+  content,
+  sources,
+  onSaveSources,
+}: {
+  content: string;
+  sources: readonly Source[];
+  onSaveSources: (next: Source[]) => Promise<void>;
+}) {
   return (
     <ViewShell>
       <div className="p-5 sm:p-6 max-w-3xl mx-auto">
@@ -43,6 +54,7 @@ function DossierPreview({ content }: { content: string }) {
             {content}
           </ReactMarkdown>
         </article>
+        <SourcesList sources={sources} onSave={onSaveSources} />
       </div>
     </ViewShell>
   );
@@ -59,6 +71,8 @@ function ResearchItem({ topicName, itemName }: { topicName: string; itemName: st
   const key = researchItemKey(topicName, itemName);
   const draft = useItemDraft(key);
   const [savedContent, setSavedContent] = useState<string | null>(null);
+  const [sources, setSources] = useState<Source[]>([]);
+  const [warning, setWarning] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   // Reopening a panel that still holds unsaved edits lands back in the editor.
@@ -88,6 +102,8 @@ function ResearchItem({ topicName, itemName }: { topicName: string; itemName: st
           return;
         }
         setSavedContent(item.content);
+        setSources(item.sources);
+        setWarning(item.warning ?? null);
         setLoadError(null);
         markLoadedRef.current(item.updatedAt);
       } catch (e: unknown) {
@@ -118,21 +134,52 @@ function ResearchItem({ topicName, itemName }: { topicName: string; itemName: st
   });
   markLoadedRef.current = markLoaded;
 
+  const savingRef = useRef(false);
   const handleSave = useCallback(async () => {
-    if (!isReady || draft === null) return;
+    // One save at a time: Ctrl+S during a save would send it twice.
+    if (!isReady || draft === null || savingRef.current) return;
+    savingRef.current = true;
     setIsSaving(true);
+    const draftKey = researchItemKey(topicName, itemName);
+    const sent = draft;
     try {
-      const { item } = await researchRPCClient.updateItem({ topicName, name: itemName, content: draft });
+      const { item } = await researchRPCClient.updateItem({ topicName, name: itemName, content: sent });
       setSavedContent(item.content);
-      setItemDraft(researchItemKey(topicName, itemName), null);
+      setSources(item.sources);
+      // Text typed while the save was in flight is still unsaved: keep it.
+      if (getItemDraft(draftKey) === sent) setItemDraft(draftKey, null);
       markLoadedRef.current(item.updatedAt);
       toastManager.success("Saved", { duration: 2000 });
     } catch (e: unknown) {
       toastManager.error(formatError(e), { duration: 4000 });
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   }, [draft, isReady, itemName, topicName]);
+
+  /**
+   * Writes the complete source list. The body sent is the file's current text (re-read just now), never the editor
+   * draft, so the text on disk is untouched and unsaved edits stay in the editor as a draft.
+   */
+  const saveSources = useCallback(
+    async (next: Source[]) => {
+      const { item: current } = await researchRPCClient.getItem({ topicName, name: itemName });
+      if (!current) throw new Error(`Item "${itemName}" no longer exists`);
+      try {
+        const { item } = await researchRPCClient.updateItem({ topicName, name: itemName, content: current.content, sources: next, baseSources: sources });
+        setSavedContent(item.content);
+        setSources(item.sources);
+        markLoadedRef.current(item.updatedAt);
+        toastManager.success(isDirty ? "Sources saved. Your unsaved text edits were kept as a draft." : "Sources saved", { duration: isDirty ? 4000 : 2000 });
+      } catch (e: unknown) {
+        // Most likely the sources changed under us; show what is on disk now before the user tries again.
+        await load({ silent: true });
+        throw e;
+      }
+    },
+    [isDirty, itemName, load, sources, topicName],
+  );
 
   // Ctrl/⌘+S saves the dossier on screen.
   useKeyboardShortcuts([{ key: "s", allowInEditable: true, enabled: panel.isActive && isDirty, handler: () => void handleSave() }]);
@@ -141,7 +188,7 @@ function ResearchItem({ topicName, itemName }: { topicName: string; itemName: st
   const handleSaveAs = useCallback(
     async (nextTopic: string, nextName: string) => {
       try {
-        const { item } = await researchRPCClient.createItem({ topicName: nextTopic, name: nextName, content });
+        const { item } = await researchRPCClient.createItem({ topicName: nextTopic, name: nextName, content, sources });
         setItemDraft(researchItemKey(topicName, itemName), null);
         setSaveAsOpen(false);
         moveItem({ topicName, itemName }, { topicName: item.topicName, itemName: item.name });
@@ -150,7 +197,7 @@ function ResearchItem({ topicName, itemName }: { topicName: string; itemName: st
         toastManager.error(formatError(e), { duration: 4000 });
       }
     },
-    [content, itemName, moveItem, topicName],
+    [content, itemName, moveItem, sources, topicName],
   );
 
   /** Renames / moves the file; open panels, the draft and the URL follow it. */
@@ -195,9 +242,9 @@ function ResearchItem({ topicName, itemName }: { topicName: string; itemName: st
   if (isReady) {
     body =
       viewMode === "preview" ? (
-        <DossierPreview content={content} />
+        <DossierPreview content={content} sources={sources} onSaveSources={saveSources} />
       ) : (
-        <ViewShell scroll={false}>
+        <ViewShell scroll={false} footer={<SourcesList sources={sources} collapsible onSave={saveSources} />}>
           <Editor
             height="100%"
             language="markdown"
@@ -316,6 +363,7 @@ function ResearchItem({ topicName, itemName }: { topicName: string; itemName: st
         />
       }
     >
+      {warning && <ErrorBanner title="Frontmatter problem" message={warning} data-testid="research-item-warning" />}
       <div className="flex-1 min-h-0">{body}</div>
 
       {saveAsOpen && (

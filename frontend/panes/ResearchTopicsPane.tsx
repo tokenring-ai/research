@@ -7,6 +7,7 @@ import AsyncListBody from "@tokenring-ai/one-frontend/components/ui/AsyncListBod
 import ConfirmModal from "@tokenring-ai/one-frontend/components/ui/ConfirmModal.tsx";
 import CreateItemModal from "@tokenring-ai/one-frontend/components/ui/CreateItemModal.tsx";
 import ErrorBanner from "@tokenring-ai/one-frontend/components/ui/ErrorBanner.tsx";
+import InlineDropdown, { InlineDropdownItem } from "@tokenring-ai/one-frontend/components/ui/InlineDropdown.tsx";
 import ListItemWithActions from "@tokenring-ai/one-frontend/components/ui/ListItemWithActions.tsx";
 import SaveAsModal from "@tokenring-ai/one-frontend/components/ui/SaveAsModal.tsx";
 import SearchInput from "@tokenring-ai/one-frontend/components/ui/SearchInput.tsx";
@@ -19,15 +20,20 @@ import { downloadTextFile } from "@tokenring-ai/one-frontend/lib/transcriptExpor
 import { runOrConfirm } from "@tokenring-ai/one-frontend/lib/uiPreferences.ts";
 import { agentRPCClient, researchRPCClient, useItems, useResearchConfiguration, useTopics } from "@tokenring-ai/one-frontend/rpc.ts";
 import type { ItemSearchResult, ItemSummary, TopicSummary } from "@tokenring-ai/research/schema";
+import { filterTopicsByTags, matchTopics, parseTagInput } from "@tokenring-ai/research/tags";
 import formatError from "@tokenring-ai/utility/error/formatError";
 import { formatBytes } from "@tokenring-ai/utility/number/formatBytes";
-import { BookOpen, ChevronDown, ChevronRight, Download, FileText, FolderOpen, Plus, SearchX, Trash2 } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronRight, Download, FileDown, FileText, FolderOpen, Link2, Plus, SearchX, Tag, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { RESEARCH_ITEM_VIEW_ID, RESEARCH_TOPIC_VIEW_ID } from "../ids.ts";
+import { downloadBase64File } from "../lib/download.ts";
 import { DEFAULT_MARKDOWN, NAME_PATTERN } from "../lib/paths.ts";
 import { setItemDraft, setResearchAgentSession } from "../lib/researchStore.ts";
 import { useResearchLayoutNavigation } from "../lib/useResearchLayoutNavigation.ts";
+
+/** What the Export menu can do with a brief. */
+type BriefAction = "md" | "docx" | "pdf" | "copy";
 
 interface Selection {
   topicName: string;
@@ -45,6 +51,9 @@ function TopicRow({
   onDeleteItem,
   onDeleteTopic,
   onExportTopic,
+  onExportBrief,
+  briefBusy,
+  onEditTags,
 }: {
   topic: TopicSummary;
   expanded: boolean;
@@ -55,6 +64,10 @@ function TopicRow({
   onDeleteItem: (topicName: string, itemName: string) => void;
   onDeleteTopic: (topicName: string) => void;
   onExportTopic: (topicName: string) => void;
+  onExportBrief: (topicName: string, format: BriefAction) => void;
+  /** True while this topic's brief is being built. */
+  briefBusy: boolean;
+  onEditTags: (topic: TopicSummary) => void;
 }) {
   const { data, isLoading, error, mutate } = useItems(expanded ? topic.name : null);
   const items: ItemSummary[] | null = data?.items ?? null;
@@ -79,6 +92,29 @@ function TopicRow({
             >
               <Plus className="w-3 h-3" />
             </button>
+            <button
+              type="button"
+              onClick={() => onEditTags(topic)}
+              title="Edit tags (client or project)"
+              aria-label={`Set tags for ${topic.name}`}
+              className="p-0.5 text-muted hover:text-primary rounded transition-opacity cursor-pointer"
+            >
+              <Tag className="w-3 h-3" />
+            </button>
+            <InlineDropdown
+              aria-label={`Export brief for ${topic.name}`}
+              align="right"
+              width="w-44"
+              closeOnSelect
+              disabled={briefBusy}
+              triggerClassName="p-0.5 px-0.5 py-0.5 bg-transparent border-0"
+              trigger={briefBusy ? <span className="text-[10px]">Exporting…</span> : <FileDown className="w-3 h-3" />}
+            >
+              <InlineDropdownItem onClick={() => onExportBrief(topic.name, "md")}>Markdown (.md)</InlineDropdownItem>
+              <InlineDropdownItem onClick={() => onExportBrief(topic.name, "docx")}>Word (.docx)</InlineDropdownItem>
+              <InlineDropdownItem onClick={() => onExportBrief(topic.name, "pdf")}>PDF (.pdf)</InlineDropdownItem>
+              <InlineDropdownItem onClick={() => onExportBrief(topic.name, "copy")}>Copy Markdown</InlineDropdownItem>
+            </InlineDropdown>
             <button
               type="button"
               onClick={() => onExportTopic(topic.name)}
@@ -108,6 +144,15 @@ function TopicRow({
           </span>
           <span className="text-xs text-muted shrink-0">{topic.itemCount}</span>
         </span>
+        {topic.tags.length > 0 && (
+          <span className="flex flex-wrap gap-1 pl-6 pt-0.5" role="group" aria-label={`Tags of ${topic.name}`}>
+            {topic.tags.map(tag => (
+              <span key={tag} className="rounded-full border border-primary/60 px-1.5 text-[10px] leading-4 text-muted">
+                {tag}
+              </span>
+            ))}
+          </span>
+        )}
       </ListItemWithActions>
 
       {expanded && (
@@ -151,6 +196,17 @@ function TopicRow({
                     <span className="flex-1 min-w-0 truncate text-xs" title={item.name}>
                       {item.name}
                     </span>
+                    {item.sourceCount > 0 && (
+                      <span
+                        className="inline-flex shrink-0 items-center gap-0.5 text-[10px] text-muted tabular-nums"
+                        title={`${item.sourceCount} ${item.sourceCount === 1 ? "source" : "sources"}`}
+                        role="img"
+                        aria-label={`${item.sourceCount} ${item.sourceCount === 1 ? "source" : "sources"}`}
+                      >
+                        <Link2 className="w-2.5 h-2.5" aria-hidden="true" />
+                        {item.sourceCount}
+                      </span>
+                    )}
                   </span>
                 </ListItemWithActions>
               );
@@ -343,6 +399,8 @@ export default function ResearchTopicsPane() {
   const [newTopicOpen, setNewTopicOpen] = useState(false);
   const [deleteItemTarget, setDeleteItemTarget] = useState<Selection | null>(null);
   const [deleteTopicTarget, setDeleteTopicTarget] = useState<string | null>(null);
+  const [tagEditTarget, setTagEditTarget] = useState<TopicSummary | null>(null);
+  const [activeTags, setActiveTags] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const trimmedQuery = searchQuery.trim();
 
@@ -432,46 +490,100 @@ export default function ResearchTopicsPane() {
     }
   }, []);
 
+  const [briefBusyTopic, setBriefBusyTopic] = useState<string | null>(null);
+  const handleExportBrief = useCallback(async (topicName: string, action: BriefAction) => {
+    setBriefBusyTopic(topicName);
+    try {
+      const result = await researchRPCClient.exportBrief({ topicName, format: action === "copy" ? "md" : action });
+      const summary = `${result.itemCount} ${result.itemCount === 1 ? "dossier" : "dossiers"}, ${result.sourceCount} ${result.sourceCount === 1 ? "reference" : "references"}`;
+      if ("contentBase64" in result) {
+        downloadBase64File(result.fileName, result.mimeType, result.contentBase64);
+        toastManager.success(`Exported brief: ${summary}`, { duration: 2000 });
+        if (result.warnings.length > 0) toastManager.warning(result.warnings.join(" "), { duration: 10000 });
+      } else if (action === "copy") {
+        await navigator.clipboard.writeText(result.content);
+        toastManager.success(`Copied brief as Markdown: ${summary}`, { duration: 2000 });
+      } else {
+        downloadTextFile(result.fileName, result.content, "text/markdown");
+        toastManager.success(`Exported brief: ${summary}`, { duration: 2000 });
+      }
+    } catch (e: unknown) {
+      toastManager.error(formatError(e), { duration: 4000 });
+    } finally {
+      setBriefBusyTopic(null);
+    }
+  }, []);
+
+  const handleSaveTags = useCallback(
+    async (text: string) => {
+      if (!tagEditTarget) return;
+      await researchRPCClient.setTopicTags({ name: tagEditTarget.name, tags: parseTagInput(text) });
+      setTagEditTarget(null);
+      toastManager.success("Tags saved", { duration: 2000 });
+    },
+    [tagEditTarget],
+  );
+
+  const toggleTag = useCallback((tag: string) => {
+    setActiveTags(current => (current.includes(tag) ? current.filter(t => t !== tag) : [...current, tag]));
+  }, []);
+
+  const allTags = useMemo(() => [...new Set([...topics.flatMap(topic => topic.tags), ...activeTags])].sort(), [topics, activeTags]);
+  const visibleTopics = useMemo(() => filterTopicsByTags(topics, activeTags), [topics, activeTags]);
+  const matchedTopics = useMemo(() => matchTopics(topics, trimmedQuery), [topics, trimmedQuery]);
+
+  const renderTopicRow = (topic: TopicSummary) => (
+    <TopicRow
+      key={topic.name}
+      topic={topic}
+      expanded={expandedKeys.has(topic.name)}
+      onToggle={() => toggle(topic.name)}
+      selected={selected}
+      onSelectItem={openItem}
+      onNewItem={name => setNewItemTopic(name)}
+      onDeleteItem={(topicName, itemName) =>
+        runOrConfirm(
+          "Delete item?",
+          () => setDeleteItemTarget({ topicName, itemName }),
+          () => void handleDeleteItem(topicName, itemName),
+        )
+      }
+      onExportTopic={name => void handleExportTopic(name)}
+      onExportBrief={(name, action) => void handleExportBrief(name, action)}
+      briefBusy={briefBusyTopic === topic.name}
+      onEditTags={setTagEditTarget}
+      onDeleteTopic={name =>
+        runOrConfirm(
+          "Delete topic?",
+          () => setDeleteTopicTarget(name),
+          () => void handleDeleteTopic(name),
+        )
+      }
+    />
+  );
+
   const body = trimmedQuery ? (
-    <SearchResults query={trimmedQuery} selected={selected} onSelectItem={openItem} />
+    <>
+      {matchedTopics.length > 0 && (
+        <div role="group" aria-label="Matching topics">
+          {matchedTopics.map(renderTopicRow)}
+        </div>
+      )}
+      <SearchResults query={trimmedQuery} selected={selected} onSelectItem={openItem} />
+    </>
   ) : (
     <AsyncListBody
       isLoading={isLoading}
       error={error}
       onRetry={() => void mutate()}
-      hasItems={topics.length > 0}
+      hasItems={visibleTopics.length > 0}
       loadingMessage="Loading topics…"
       errorTitle="Failed to load topics"
       emptyIcon={BookOpen}
-      emptyTitle="No topics yet"
-      emptyHint="Start a research agent or create a topic"
+      emptyTitle={activeTags.length > 0 ? "No topics with these tags" : "No topics yet"}
+      emptyHint={activeTags.length > 0 ? "Clear a tag filter to see more" : "Start a research agent or create a topic"}
     >
-      {topics.map(topic => (
-        <TopicRow
-          key={topic.name}
-          topic={topic}
-          expanded={expandedKeys.has(topic.name)}
-          onToggle={() => toggle(topic.name)}
-          selected={selected}
-          onSelectItem={openItem}
-          onNewItem={name => setNewItemTopic(name)}
-          onDeleteItem={(topicName, itemName) =>
-            runOrConfirm(
-              "Delete item?",
-              () => setDeleteItemTarget({ topicName, itemName }),
-              () => void handleDeleteItem(topicName, itemName),
-            )
-          }
-          onExportTopic={name => void handleExportTopic(name)}
-          onDeleteTopic={name =>
-            runOrConfirm(
-              "Delete topic?",
-              () => setDeleteTopicTarget(name),
-              () => void handleDeleteTopic(name),
-            )
-          }
-        />
-      ))}
+      {visibleTopics.map(renderTopicRow)}
     </AsyncListBody>
   );
 
@@ -500,8 +612,26 @@ export default function ResearchTopicsPane() {
       <ResearchAgentSessions selected={selected} onAgentChange={setAgentId} />
 
       <div className="shrink-0 px-2 py-1.5 border-b border-primary/50">
-        <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search dossiers…" aria-label="Search research" />
+        <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search dossiers and tags…" aria-label="Search research" />
       </div>
+      {allTags.length > 0 && !trimmedQuery && (
+        <div className="shrink-0 flex flex-wrap gap-1 px-2 py-1.5 border-b border-primary/50" role="group" aria-label="Filter by tag">
+          {allTags.map(tag => {
+            const active = activeTags.includes(tag);
+            return (
+              <button
+                key={tag}
+                type="button"
+                aria-pressed={active}
+                onClick={() => toggleTag(tag)}
+                className={`rounded-full border px-2 text-[11px] leading-5 cursor-pointer focus-ring ${active ? "border-accent bg-accent-muted text-accent" : "border-primary/60 text-muted hover:text-primary"}`}
+              >
+                {tag}
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div className="flex-1 min-h-0 overflow-y-auto">{body}</div>
 
       {newItemTopic !== null && (
@@ -527,6 +657,19 @@ export default function ResearchTopicsPane() {
           }}
           onSave={handleCreateItem}
           onClose={() => setNewItemTopic(null)}
+        />
+      )}
+      {tagEditTarget && (
+        <CreateItemModal
+          title={`Tags for ${tagEditTarget.name}`}
+          placeholder="acme, due-diligence"
+          pattern={/^[\s\S]*$/}
+          validationError="Enter tags separated by commas."
+          initialValue={tagEditTarget.tags.join(", ")}
+          createLabel="Save tags"
+          createIcon={Tag}
+          onCreate={handleSaveTags}
+          onClose={() => setTagEditTarget(null)}
         />
       )}
       {newTopicOpen && (

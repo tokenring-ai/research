@@ -25,7 +25,6 @@ export const RESEARCH_APP = {
   icon: Search,
   iconClass: "text-indigo-500",
   gradient: "from-indigo-500 to-violet-600",
-  defaultPinned: true,
   views: [RESEARCH_TOPICS_VIEW_ID, RESEARCH_START_VIEW_ID, RESEARCH_TOPIC_VIEW_ID, RESEARCH_ITEM_VIEW_ID, "chat"],
   primaryKind: RESEARCH_VIEW_KIND,
   placement: { agent: "right" },

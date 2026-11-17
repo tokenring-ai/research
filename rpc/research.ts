@@ -59,6 +59,12 @@ export default createRPCEndpoint(ResearchRpcSchema, {
     return { topic };
   },
 
+  async setTopicTags(args, app: TokenRingApp) {
+    const researchService = app.requireService(ResearchService);
+    const topic = await researchService.setTopicTags(researchService.getDefaultResearchDirectory(), args.name, args.tags);
+    return { topic };
+  },
+
   async deleteTopic(args, app: TokenRingApp) {
     const researchService = app.requireService(ResearchService);
     const success = await researchService.deleteTopic(researchService.getDefaultResearchDirectory(), args.name);
@@ -79,7 +85,7 @@ export default createRPCEndpoint(ResearchRpcSchema, {
 
   async createItem(args, app: TokenRingApp) {
     const researchService = app.requireService(ResearchService);
-    const item = await researchService.createItem(researchService.getDefaultResearchDirectory(), args.topicName, args.name, args.content);
+    const item = await researchService.createItem(researchService.getDefaultResearchDirectory(), args.topicName, args.name, args.content, args.sources);
     return { item };
   },
 
@@ -88,6 +94,8 @@ export default createRPCEndpoint(ResearchRpcSchema, {
     // The editor saves an item it loaded; one deleted meanwhile is a conflict, not a silent re-create.
     const item = await researchService.updateItem(researchService.getDefaultResearchDirectory(), args.topicName, args.name, args.content, {
       requireExisting: true,
+      ...(args.sources ? { sources: args.sources } : {}),
+      ...(args.baseSources ? { expectedSources: args.baseSources } : {}),
     });
     return { item };
   },
@@ -132,6 +140,13 @@ export default createRPCEndpoint(ResearchRpcSchema, {
   async exportTopic(args, app: TokenRingApp) {
     const researchService = app.requireService(ResearchService);
     return researchService.exportTopic(researchService.getDefaultResearchDirectory(), args.topicName);
+  },
+
+  async exportBrief(args, app: TokenRingApp) {
+    const researchService = app.requireService(ResearchService);
+    const root = researchService.getDefaultResearchDirectory();
+    if (args.format === "docx" || args.format === "pdf") return researchService.exportBriefFile(root, args.topicName, args.format);
+    return researchService.exportBrief(root, args.topicName);
   },
 
   getResearchState(args, app: TokenRingApp) {

@@ -2,6 +2,7 @@ import type { RPCSchema } from "@tokenring-ai/rpc/types";
 import { AgentNotFoundSchema, SuccessSchema } from "@tokenring-ai/rpc/types";
 import { z } from "zod";
 import { ItemSchema, ItemSearchResultSchema, ItemSummarySchema, TopicSummarySchema } from "../schema.ts";
+import { SourceInputSchema } from "../sources.ts";
 
 export default {
   name: "Research RPC",
@@ -34,6 +35,17 @@ export default {
       type: "mutation",
       input: z.object({
         name: z.string(),
+      }),
+      result: z.object({
+        topic: TopicSummarySchema,
+      }),
+    },
+    setTopicTags: {
+      type: "mutation",
+      input: z.object({
+        name: z.string(),
+        /** The complete tag list; normalised (trimmed, lowercased, de-duplicated, capped) by the server. */
+        tags: z.array(z.string()).max(50),
       }),
       result: z.object({
         topic: TopicSummarySchema,
@@ -82,6 +94,7 @@ export default {
         topicName: z.string(),
         name: z.string(),
         content: z.string().default(""),
+        sources: z.array(SourceInputSchema).exactOptional(),
       }),
       result: z.object({
         item: ItemSchema,
@@ -93,6 +106,13 @@ export default {
         topicName: z.string(),
         name: z.string(),
         content: z.string(),
+        /** Replaces the recorded sources; leave out to keep them. */
+        sources: z.array(SourceInputSchema).exactOptional(),
+        /**
+         * The sources the editor started from. When given and the file's sources have since changed (an agent added
+         * one, say), the save is refused instead of overwriting them.
+         */
+        baseSources: z.array(SourceInputSchema).exactOptional(),
       }),
       result: z.object({
         item: ItemSchema,
@@ -142,6 +162,32 @@ export default {
         content: z.string(),
         itemCount: z.number(),
       }),
+    },
+    exportBrief: {
+      type: "query",
+      input: z.object({
+        topicName: z.string(),
+        /** Output format; Markdown when left out. */
+        format: z.enum(["md", "docx", "pdf"]).exactOptional(),
+      }),
+      // Markdown comes back as text (the original shape); Word and PDF come back base64 encoded.
+      result: z.union([
+        z.object({
+          fileName: z.string(),
+          content: z.string(),
+          itemCount: z.number(),
+          sourceCount: z.number(),
+        }),
+        z.object({
+          fileName: z.string(),
+          mimeType: z.string(),
+          contentBase64: z.string(),
+          itemCount: z.number(),
+          sourceCount: z.number(),
+          /** Things the document could not show faithfully (replaced characters, skipped images, flattened tables). */
+          warnings: z.array(z.string()),
+        }),
+      ]),
     },
     getResearchState: {
       type: "query",

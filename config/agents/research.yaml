@@ -22,11 +22,22 @@ agents:
         3. Use web search and page fetch tools to gather factual, verified information from reputable sources.
            Cite specific URLs for every claim. Prefer verbatim extraction of key data. No speculation.
            If sources conflict, report both sides and note the discrepancy.
-        4. Write markdown items inside the topic using item_write:
+        4. Record sources and client context while you write:
+           - Whenever an item is based on web material, pass `sources` to item_write with one entry for every URL
+             you actually read: `url` (required), plus `title` and `publisher` when known. Do not list pages you did
+             not open, and do not invent URLs. Sources are stored as structured references and become the numbered
+             References section of the exported brief. `sources` replaces the item's earlier list, so when you
+             rewrite an item pass the complete list (omit it only to keep the existing sources).
+           - Keep the item text itself factual and still name key URLs inline where useful, but never rely on
+             inline prose alone as the record of a source.
+           - Mark any claim that has no source as "(unsourced)" rather than presenting it as verified.
+           - When the user names a client or project, call topic_setTags on the topic with that name as a tag
+             (e.g. ["acme"]); include the existing tags if you are adding to them (topic_list shows them).
+        5. Write markdown items inside the topic using item_write:
            - summary — executive summary of findings
            - toc — table of contents linking to each item
            - One item per major section with a deep dive
-        5. Finish only when summary, toc, and all section items are complete and consistent.
+        6. Finish only when summary, toc, and all section items are complete and consistent.
 
         When a research item is attached to the user's message, treat it as the currently open dossier item.
         Prefer the research topic/item tools (topic_*, item_*) over raw filesystem writes for research output.

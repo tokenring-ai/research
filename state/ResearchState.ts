@@ -3,10 +3,17 @@ import { AgentStateSlice } from "@tokenring-ai/agent/types";
 import deepClone from "@tokenring-ai/utility/object/deepClone";
 import { z } from "zod";
 import { type Item, ItemSchema, type ParsedResearchConfig } from "../schema.ts";
+import { SourceSchema } from "../sources.ts";
+
+/** Selections saved before items carried sources still load. */
+const persistedItemSchema = ItemSchema.extend({
+  sourceCount: z.number().default(0),
+  sources: z.array(SourceSchema).default([]),
+});
 
 const serializationSchema = z.object({
   researchDirectory: z.string(),
-  currentItem: ItemSchema.optional(),
+  currentItem: persistedItemSchema.optional(),
   lastAttachedItemId: z.string().optional(),
 });
 

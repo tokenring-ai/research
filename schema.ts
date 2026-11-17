@@ -1,10 +1,13 @@
 import type { ConfigFieldMeta } from "@tokenring-ai/app/config/metadata";
 import { z } from "zod";
+import { SourceSchema } from "./sources.ts";
 
 export const TopicSummarySchema = z.object({
   name: z.string(),
   itemCount: z.number(),
   updatedAt: z.string(),
+  /** Normalised client / project tags from the topic's `.topic.yaml`; empty when untagged. */
+  tags: z.array(z.string()),
 });
 export type TopicSummary = z.output<typeof TopicSummarySchema>;
 
@@ -13,11 +16,17 @@ export const ItemSummarySchema = z.object({
   name: z.string(),
   size: z.number(),
   updatedAt: z.string(),
+  /** Number of structured sources recorded in the item's frontmatter. */
+  sourceCount: z.number(),
 });
 export type ItemSummary = z.output<typeof ItemSummarySchema>;
 
 export const ItemSchema = ItemSummarySchema.extend({
+  /** The Markdown without its frontmatter block. */
   content: z.string(),
+  sources: z.array(SourceSchema),
+  /** Set when the file's frontmatter was unusable; `content` is then the raw file text. */
+  warning: z.string().exactOptional(),
 });
 export type Item = z.output<typeof ItemSchema>;
 

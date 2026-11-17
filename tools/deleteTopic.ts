@@ -1,5 +1,7 @@
 import type Agent from "@tokenring-ai/agent/Agent";
 import type { TokenRingToolDefinition, TokenRingToolResult } from "@tokenring-ai/chat/schema";
+import { ApprovalLevel } from "@tokenring-ai/chat/schema";
+import { requireToolApproval } from "@tokenring-ai/chat/util/requireToolApproval";
 import { z } from "zod";
 import ResearchService from "../ResearchService.ts";
 
@@ -7,6 +9,13 @@ const name = "topic_delete";
 const displayName = "Research/delete topic";
 
 async function execute({ name: topicName }: z.output<typeof inputSchema>, agent: Agent): Promise<TokenRingToolResult> {
+  await requireToolApproval(agent, {
+    toolName: name,
+    message: `Delete the research topic "${topicName}" and all its items?`,
+    detailedDescription: `Permanently deletes the research topic "${topicName}" and every item in it.`,
+    safetyLevel: ApprovalLevel.OwnDataLoss,
+    default: false,
+  });
   const researchService = agent.requireService(ResearchService);
   const directory = researchService.getResearchDirectory(agent);
   const success = await researchService.deleteTopic(directory, topicName);

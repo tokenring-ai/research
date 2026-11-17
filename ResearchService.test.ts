@@ -89,6 +89,26 @@ describe("ResearchService", () => {
     expect(await service.getItem(dir, "topic", "page")).toBeNull();
   });
 
+  test("a sources save based on stale sources is refused and nothing is overwritten", async () => {
+    const dir = tempDir();
+    const service = makeService(dir);
+    const a = { url: "https://a.example/x", title: "A" };
+    const b = { url: "https://b.example/y", title: "B" };
+    const created = await service.createItem(dir, "topic", "page", "body", [a]);
+
+    // The editor loaded [a]; meanwhile an agent adds b.
+    await service.updateItem(dir, "topic", "page", "body", { sources: [a, b] });
+    await expect(service.updateItem(dir, "topic", "page", "body", { sources: [{ ...a, title: "A2" }], expectedSources: created.sources })).rejects.toThrow(
+      "changed elsewhere",
+    );
+    expect((await service.getItem(dir, "topic", "page"))?.sources.map(source => source.url)).toEqual([a.url, b.url]);
+
+    // Based on what is really there, the save goes through.
+    const current = (await service.getItem(dir, "topic", "page"))?.sources ?? [];
+    const saved = await service.updateItem(dir, "topic", "page", "body", { sources: [current[0] as (typeof current)[0]], expectedSources: current });
+    expect(saved.sources.map(source => source.url)).toEqual([a.url]);
+  });
+
   test("deleteItem removes an existing item and reports missing ones", async () => {
     const dir = tempDir();
     const service = makeService(dir);

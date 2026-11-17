@@ -5,6 +5,9 @@ import type Agent from "@tokenring-ai/agent/Agent";
 import type { AgentCreationContext } from "@tokenring-ai/agent/types";
 import type { TokenRingService } from "@tokenring-ai/app/types";
 import deepClone from "@tokenring-ai/utility/object/deepClone";
+import { YAML } from "bun";
+import { BRIEF_MIME_TYPES, renderBriefFile } from "./export/briefFile.ts";
+import { emitItemText, parseItemText } from "./itemFile.ts";
 import {
   type Item,
   type ItemSearchResult,
@@ -14,11 +17,15 @@ import {
   ResearchServiceConfigSchema,
   type TopicSummary,
 } from "./schema.ts";
+import { type BriefItem, buildBrief, normalizeSources, numberReferences, type Source, type SourceInput } from "./sources.ts";
 import { ResearchState } from "./state/ResearchState.ts";
+import { normalizeTags } from "./tags.ts";
 
 const NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/;
 const EXTENSION = ".md";
 const SNIPPET_RADIUS = 80;
+/** Per-topic metadata (tags) kept beside the items; human-readable and optional. */
+const TOPIC_META_FILE = ".topic.yaml";
 
 /** First Markdown heading of a dossier, used as its title. */
 function extractTitle(content: string): string | null {
@@ -136,7 +143,7 @@ export default class ResearchService implements TokenRingService {
       const topicDir = path.join(root, entry.name);
       const stat = await fs.stat(topicDir);
       const itemCount = await this.countItems(topicDir);
-      topics.push({ name: entry.name, itemCount, updatedAt: stat.mtime.toISOString() });
+      topics.push({ name: entry.name, itemCount, updatedAt: stat.mtime.toISOString(), tags: await this.readTags(topicDir) });
     }
 
     return topics.sort((a, b) => a.name.localeCompare(b.name));
@@ -158,7 +165,29 @@ export default class ResearchService implements TokenRingService {
     }
     await fs.mkdir(topicDir, { recursive: true });
     const stat = await fs.stat(topicDir);
-    return { name: topicName, itemCount: 0, updatedAt: stat.mtime.toISOString() };
+    return { name: topicName, itemCount: 0, updatedAt: stat.mtime.toISOString(), tags: [] };
+  }
+
+  private async readTags(topicDir: string): Promise<string[]> {
+    try {
+      const data: unknown = YAML.parse(await fs.readFile(path.join(topicDir, TOPIC_META_FILE), "utf-8"));
+      const tags = data && typeof data === "object" && "tags" in data ? (data as { tags: unknown }).tags : undefined;
+      return Array.isArray(tags) ? normalizeTags(tags.filter((tag): tag is string => typeof tag === "string")) : [];
+    } catch {
+      return []; // Missing or unreadable metadata means untagged.
+    }
+  }
+
+  /** Replaces a topic's tags (normalised); an empty list removes the sidecar file. */
+  async setTopicTags(root: string, topicName: string, tags: readonly string[]): Promise<TopicSummary> {
+    const topicDir = this.resolveTopicDirectory(root, topicName);
+    if (!(await pathExists(topicDir))) throw new Error(`Topic "${topicName}" not found`);
+    const normalized = normalizeTags(tags);
+    const metaPath = path.join(topicDir, TOPIC_META_FILE);
+    if (normalized.length === 0) await fs.rm(metaPath, { force: true });
+    else await fs.writeFile(metaPath, `${YAML.stringify({ tags: normalized }, null, 2).replace(/\n*$/, "")}\n`, "utf-8");
+    const stat = await fs.stat(topicDir);
+    return { name: topicName, itemCount: await this.countItems(topicDir), updatedAt: stat.mtime.toISOString(), tags: normalized };
   }
 
   async deleteTopic(root: string, topicName: string): Promise<boolean> {
@@ -183,9 +212,11 @@ export default class ResearchService implements TokenRingService {
     const items: ItemSummary[] = [];
     for (const entry of entries) {
       if (!entry.endsWith(EXTENSION)) continue;
-      const stat = await fs.stat(path.join(topicDir, entry));
+      const filePath = path.join(topicDir, entry);
+      const stat = await fs.stat(filePath);
       if (!stat.isFile()) continue;
-      items.push({ topicName, name: entry.slice(0, -EXTENSION.length), size: stat.size, updatedAt: stat.mtime.toISOString() });
+      const { sources } = parseItemText(await fs.readFile(filePath, "utf-8"));
+      items.push({ topicName, name: entry.slice(0, -EXTENSION.length), size: stat.size, updatedAt: stat.mtime.toISOString(), sourceCount: sources.length });
     }
 
     return items.sort((a, b) => a.name.localeCompare(b.name));
@@ -199,28 +230,57 @@ export default class ResearchService implements TokenRingService {
     } catch {
       return null;
     }
-    const content = await fs.readFile(filePath, "utf-8");
-    return { topicName, name: itemName, content, size: stat.size, updatedAt: stat.mtime.toISOString() };
+    const { body, sources, warning } = parseItemText(await fs.readFile(filePath, "utf-8"));
+    return {
+      topicName,
+      name: itemName,
+      content: body,
+      sources,
+      sourceCount: sources.length,
+      size: stat.size,
+      updatedAt: stat.mtime.toISOString(),
+      ...(warning ? { warning } : {}),
+    };
   }
 
-  async createItem(root: string, topicName: string, itemName: string, content: string): Promise<Item> {
+  async createItem(root: string, topicName: string, itemName: string, content: string, sources?: readonly SourceInput[]): Promise<Item> {
     const filePath = this.resolveItemPath(root, topicName, itemName);
     if (await pathExists(filePath)) {
       throw new Error(`Item "${itemName}" already exists in topic "${topicName}"`);
     }
-    return this.writeItemFile(root, topicName, itemName, content);
+    return this.writeItemFile(root, topicName, itemName, content, sources);
   }
 
   /**
    * Overwrite an item, creating it unless `requireExisting` is set. Editors pass
    * `requireExisting` so saving an item deleted elsewhere fails instead of
    * silently re-creating it; agents writing findings keep the upsert.
+   *
+   * `content` is the Markdown body. `sources` replaces the item's recorded
+   * sources; leave it undefined to keep the ones already on disk, or pass `[]`
+   * to clear them.
    */
-  async updateItem(root: string, topicName: string, itemName: string, content: string, options: { requireExisting?: boolean } = {}): Promise<Item> {
-    if (options.requireExisting && !(await pathExists(this.resolveItemPath(root, topicName, itemName)))) {
+  async updateItem(
+    root: string,
+    topicName: string,
+    itemName: string,
+    content: string,
+    options: { requireExisting?: boolean; sources?: readonly SourceInput[]; expectedSources?: readonly SourceInput[] } = {},
+  ): Promise<Item> {
+    const filePath = this.resolveItemPath(root, topicName, itemName);
+    if (options.requireExisting && !(await pathExists(filePath))) {
       throw new Error(`Item "${itemName}" no longer exists in topic "${topicName}" — it was deleted elsewhere. Use Save As to keep your copy.`);
     }
-    return this.writeItemFile(root, topicName, itemName, content);
+    if (options.expectedSources) {
+      // Checked immediately before the write, so only a change in the few milliseconds between the two can slip through.
+      const onDisk = JSON.stringify(await this.readExistingSources(filePath));
+      if (onDisk !== JSON.stringify(normalizeSources(options.expectedSources))) {
+        throw new Error(
+          `The sources of "${itemName}" were changed elsewhere (probably by an agent) while you were editing. They have been reloaded; make your change again.`,
+        );
+      }
+    }
+    return this.writeItemFile(root, topicName, itemName, content, options.sources);
   }
 
   async deleteItem(root: string, topicName: string, itemName: string): Promise<boolean> {
@@ -271,9 +331,10 @@ export default class ResearchService implements TokenRingService {
     const results: ItemSearchResult[] = [];
     for (const topicName of topics) {
       for (const summary of await this.listItems(root, topicName)) {
+        // Searches the Markdown body only; frontmatter (source URLs) is not matched.
         let content: string;
         try {
-          content = await fs.readFile(this.resolveItemPath(root, topicName, summary.name), "utf-8");
+          content = parseItemText(await fs.readFile(this.resolveItemPath(root, topicName, summary.name), "utf-8")).body;
         } catch {
           continue;
         }
@@ -301,7 +362,7 @@ export default class ResearchService implements TokenRingService {
 
   /**
    * Every dossier in a topic concatenated into one Markdown document, each
-   * under a `## <name>` section separated by rules.
+   * under a `## <name>` section separated by rules (frontmatter is left out).
    */
   async exportTopic(root: string, topicName: string): Promise<{ fileName: string; content: string; itemCount: number }> {
     const topicDir = this.resolveTopicDirectory(root, topicName);
@@ -316,11 +377,66 @@ export default class ResearchService implements TokenRingService {
     return { fileName: `${topicName}.md`, content: [header, ...sections].join("\n---\n\n"), itemCount: sections.length };
   }
 
-  private async writeItemFile(root: string, topicName: string, itemName: string, content: string): Promise<Item> {
+  /**
+   * Client-ready brief: the topic's dossiers in name order (as `exportTopic`)
+   * followed by a numbered "References" section built from every item's
+   * sources, de-duplicated by URL.
+   */
+  async exportBrief(
+    root: string,
+    topicName: string,
+    exportedAt: string = new Date().toISOString(),
+  ): Promise<{ fileName: string; content: string; itemCount: number; sourceCount: number }> {
+    const { items, tags } = await this.collectBrief(root, topicName);
+    const { content, sourceCount } = buildBrief(topicName, tags, items, exportedAt);
+    return { fileName: `${topicName}-brief.md`, content, itemCount: items.length, sourceCount };
+  }
+
+  /** The brief as a Word or PDF file (base64 for the wire), with any rendering warnings. */
+  async exportBriefFile(
+    root: string,
+    topicName: string,
+    format: "docx" | "pdf",
+    exportedAt: string = new Date().toISOString(),
+  ): Promise<{ fileName: string; mimeType: string; contentBase64: string; itemCount: number; sourceCount: number; warnings: string[] }> {
+    const { items, tags } = await this.collectBrief(root, topicName);
+    const file = await renderBriefFile(format, topicName, tags, items, exportedAt);
+    return {
+      fileName: `${topicName}-brief.${format}`,
+      mimeType: BRIEF_MIME_TYPES[format],
+      contentBase64: Buffer.from(file.bytes).toString("base64"),
+      itemCount: items.length,
+      sourceCount: numberReferences(items).references.length,
+      warnings: file.warnings,
+    };
+  }
+
+  private async collectBrief(root: string, topicName: string): Promise<{ items: BriefItem[]; tags: string[] }> {
+    const topicDir = this.resolveTopicDirectory(root, topicName);
+    if (!(await pathExists(topicDir))) throw new Error(`Topic "${topicName}" not found`);
+    const items: BriefItem[] = [];
+    for (const summary of await this.listItems(root, topicName)) {
+      const item = await this.getItem(root, topicName, summary.name);
+      if (item) items.push({ name: item.name, content: item.content, sources: item.sources });
+    }
+    return { items, tags: await this.readTags(topicDir) };
+  }
+
+  private async writeItemFile(root: string, topicName: string, itemName: string, content: string, sources?: readonly SourceInput[]): Promise<Item> {
     const filePath = this.resolveItemPath(root, topicName, itemName);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, content, "utf-8");
+    const kept = sources ? normalizeSources(sources) : await this.readExistingSources(filePath);
+    await fs.writeFile(filePath, emitItemText(content, kept), "utf-8");
     const stat = await fs.stat(filePath);
-    return { topicName, name: itemName, content, size: stat.size, updatedAt: stat.mtime.toISOString() };
+    return { topicName, name: itemName, content, sources: kept, sourceCount: kept.length, size: stat.size, updatedAt: stat.mtime.toISOString() };
+  }
+
+  /** Sources already on disk, kept when a write does not supply any. */
+  private async readExistingSources(filePath: string): Promise<Source[]> {
+    try {
+      return parseItemText(await fs.readFile(filePath, "utf-8")).sources;
+    } catch {
+      return [];
+    }
   }
 }

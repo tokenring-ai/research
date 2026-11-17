@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { defineView } from "@tokenring-ai/one-frontend/layout/define.ts";
@@ -18,13 +18,13 @@ void mock.module("@monaco-editor/react", () => ({
 void mock.module("@tokenring-ai/one-frontend/hooks/useTheme.ts", () => ({ useTheme: () => ["dark", mock()] as const }));
 
 const topics = [
-  { name: "solid-state-batteries", itemCount: 2, updatedAt: "2026-07-01T12:00:00.000Z" },
-  { name: "local-ai-tools", itemCount: 0, updatedAt: "2026-07-01T11:00:00.000Z" },
+  { name: "solid-state-batteries", itemCount: 2, updatedAt: "2026-07-01T12:00:00.000Z", tags: ["acme", "q4"] },
+  { name: "local-ai-tools", itemCount: 0, updatedAt: "2026-07-01T11:00:00.000Z", tags: [] },
 ];
 
 const batteryItems = [
-  { topicName: "solid-state-batteries", name: "summary", size: 420, updatedAt: "2026-07-01T12:00:00.000Z" },
-  { topicName: "solid-state-batteries", name: "toc", size: 180, updatedAt: "2026-07-01T12:01:00.000Z" },
+  { topicName: "solid-state-batteries", name: "summary", size: 420, updatedAt: "2026-07-01T12:00:00.000Z", sourceCount: 2 },
+  { topicName: "solid-state-batteries", name: "toc", size: 180, updatedAt: "2026-07-01T12:01:00.000Z", sourceCount: 0 },
 ];
 
 const summaryItem = {
@@ -33,6 +33,12 @@ const summaryItem = {
   content: "# Summary\n\nSolid-state batteries are promising.",
   size: 420,
   updatedAt: "2026-07-01T12:00:00.000Z",
+  sourceCount: 2,
+  sources: [
+    { url: "https://acme.example/report", title: "Annual report", publisher: "ACME Corp", accessed: "2026-11-01" },
+    { url: "https://news.example/story", accessed: "2026-11-02" },
+  ] as { url: string; title?: string; publisher?: string; accessed?: string }[],
+  warning: undefined as string | undefined,
 };
 
 let topicsState = [...topics];
@@ -40,16 +46,33 @@ let itemsByTopic: Record<string, typeof batteryItems> = {};
 let getItemResult: typeof summaryItem | null = summaryItem;
 let configurationState: { agentTypes: string[]; searchProviderAvailable: boolean } = { agentTypes: ["research"], searchProviderAvailable: true };
 
-const createAgent = mock(async (_args: { agentType: string; headless: boolean }) => ({ id: "research-agent-1", displayName: "Researcher", description: "" }));
+const createAgent = mock(async (_args: { agentType: string }) => ({ id: "research-agent-1", displayName: "Researcher", description: "" }));
 const sendInput = mock(async () => ({ status: "success" as const, requestId: "req-1" }));
 const deleteAgent = mock(async () => ({ status: "success" as const }));
-const createTopic = mock(async (_args: { name: string }) => ({ topic: { name: _args.name, itemCount: 0, updatedAt: "2026-07-02T00:00:00.000Z" } }));
+const createTopic = mock(async (_args: { name: string }) => ({ topic: { name: _args.name, itemCount: 0, updatedAt: "2026-07-02T00:00:00.000Z", tags: [] } }));
 const deleteTopic = mock(async (_args: { name: string }) => ({ success: true }));
-const createItem = mock(async (args: { topicName: string; name: string; content: string }) => ({
-  item: { topicName: args.topicName, name: args.name, content: args.content, size: args.content.length, updatedAt: "2026-07-02T00:00:00.000Z" },
+const createItem = mock(async (args: { topicName: string; name: string; content: string; sources?: unknown[] }) => ({
+  item: {
+    topicName: args.topicName,
+    name: args.name,
+    content: args.content,
+    size: args.content.length,
+    updatedAt: "2026-07-02T00:00:00.000Z",
+    sourceCount: 0,
+    sources: [],
+  },
 }));
-const updateItem = mock(async (args: { topicName: string; name: string; content: string }) => ({
-  item: { topicName: args.topicName, name: args.name, content: args.content, size: args.content.length, updatedAt: "2026-07-02T00:00:00.000Z" },
+type TestSource = { url: string; title?: string; publisher?: string; accessed?: string };
+const updateItem = mock(async (args: { topicName: string; name: string; content: string; sources?: TestSource[]; baseSources?: TestSource[] }) => ({
+  item: {
+    topicName: args.topicName,
+    name: args.name,
+    content: args.content,
+    size: args.content.length,
+    updatedAt: "2026-07-02T00:00:00.000Z",
+    sourceCount: args.sources?.length ?? 0,
+    sources: args.sources ?? [],
+  },
 }));
 const deleteItem = mock(async (_args: { topicName: string; name: string }) => ({ success: true }));
 const getItem = mock(async (_args: { topicName: string; name: string }) => ({ item: getItemResult }));
@@ -68,6 +91,24 @@ const searchItems = mock(async (_args: { query: string }) => ({
       updatedAt: "2026-07-01T12:00:00.000Z",
     },
   ],
+}));
+const exportBrief = mock(async (args: { topicName: string; format?: "md" | "docx" | "pdf" }) =>
+  args.format === "docx" || args.format === "pdf"
+    ? {
+        fileName: `${args.topicName}-brief.${args.format}`,
+        mimeType: `application/${args.format}`,
+        contentBase64: "UEs=",
+        itemCount: 2,
+        sourceCount: 3,
+        warnings: exportWarnings,
+      }
+    : { fileName: `${args.topicName}-brief.md`, content: "# brief", itemCount: 2, sourceCount: 3 },
+);
+let exportWarnings: string[] = [];
+const downloadBase64File = mock((_fileName: string, _mime: string, _base64: string) => {});
+void mock.module("../lib/download.ts", () => ({ downloadBase64File }));
+const setTopicTags = mock(async (args: { name: string; tags: string[] }) => ({
+  topic: { name: args.name, itemCount: 2, updatedAt: "2026-07-02T00:00:00.000Z", tags: args.tags },
 }));
 const exportTopic = mock(async (args: { topicName: string }) => ({ fileName: `${args.topicName}.md`, content: "# topic", itemCount: 2 }));
 const downloadTextFile = mock((_fileName: string, _content: string, _mime: string) => {});
@@ -104,9 +145,15 @@ void mock.module("@tokenring-ai/one-frontend/rpc.ts", () => ({
     renameItem,
     searchItems,
     exportTopic,
+    exportBrief,
+    setTopicTags,
   },
 }));
 
+const { notificationManager } = await import("@tokenring-ai/one-frontend/components/ui/toast.tsx");
+const toastWarning = spyOn(notificationManager, "warning");
+const toastSuccess = spyOn(notificationManager, "success");
+const toastError = spyOn(notificationManager, "error");
 const { default: layout } = await import("../layout.ts");
 const { default: viewsModule } = await import("../views.tsx");
 const { CORE_KINDS } = await import("@tokenring-ai/one-frontend/apps/kinds.ts");
@@ -159,7 +206,13 @@ describe("Research app", () => {
       renameItem,
       searchItems,
       exportTopic,
+      exportBrief,
+      setTopicTags,
       downloadTextFile,
+      downloadBase64File,
+      toastWarning,
+      toastSuccess,
+      toastError,
     ]) {
       fn.mockClear();
     }
@@ -168,12 +221,13 @@ describe("Research app", () => {
     getItemResult = { ...summaryItem };
     configurationState = { agentTypes: ["research"], searchProviderAvailable: true };
     todosState = undefined;
+    exportWarnings = [];
   });
 
   describe("layout", () => {
     it("keeps the old dashboard's identity and can host agent chats", () => {
       const app = layout.apps[0]!;
-      expect(app).toMatchObject({ id: "research", path: "/research", label: "Research", group: "Build", shortLabel: "RE", defaultPinned: true });
+      expect(app).toMatchObject({ id: "research", path: "/research", label: "Research", group: "Build", shortLabel: "RE" });
       expect(app.views).toContain("chat");
       expect(registry.routes.resolve("/research")?.viewId).toBe("research-start");
       expect(registry.routes.resolve("/research/solid-state-batteries")?.viewId).toBe("research-topic");
@@ -380,6 +434,107 @@ describe("Research app", () => {
       expect(exportTopic).toHaveBeenCalledWith({ topicName: "solid-state-batteries" });
     });
 
+    it("exports a client brief via exportBrief", async () => {
+      const user = userEvent.setup();
+      renderResearch();
+
+      await user.click(await screen.findByRole("button", { name: "Export brief for solid-state-batteries" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Markdown (.md)" }));
+      await waitFor(() => expect(downloadTextFile).toHaveBeenCalledWith("solid-state-batteries-brief.md", "# brief", "text/markdown"));
+      expect(exportBrief).toHaveBeenCalledWith({ topicName: "solid-state-batteries", format: "md" });
+    });
+
+    it("exports a Word or PDF brief by downloading the base64 file", async () => {
+      const user = userEvent.setup();
+      renderResearch();
+
+      await user.click(await screen.findByRole("button", { name: "Export brief for solid-state-batteries" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Word (.docx)" }));
+      await waitFor(() => expect(downloadBase64File).toHaveBeenCalledWith("solid-state-batteries-brief.docx", "application/docx", "UEs="));
+      expect(exportBrief).toHaveBeenCalledWith({ topicName: "solid-state-batteries", format: "docx" });
+
+      await user.click(await screen.findByRole("button", { name: "Export brief for solid-state-batteries" }));
+      await user.click(await screen.findByRole("menuitem", { name: "PDF (.pdf)" }));
+      await waitFor(() => expect(downloadBase64File).toHaveBeenCalledWith("solid-state-batteries-brief.pdf", "application/pdf", "UEs="));
+    });
+
+    it("shows the export warnings", async () => {
+      exportWarnings = ["3 characters were replaced with ?."];
+      const user = userEvent.setup();
+      renderResearch();
+
+      await user.click(await screen.findByRole("button", { name: "Export brief for solid-state-batteries" }));
+      await user.click(await screen.findByRole("menuitem", { name: "PDF (.pdf)" }));
+      await waitFor(() => expect(toastWarning).toHaveBeenCalledWith("3 characters were replaced with ?.", { duration: 10000 }));
+    });
+
+    it("copies the brief as Markdown to the clipboard", async () => {
+      const user = userEvent.setup(); // installs a clipboard stub
+      renderResearch();
+
+      await user.click(await screen.findByRole("button", { name: "Export brief for solid-state-batteries" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Copy Markdown" }));
+      await waitFor(async () => expect(await navigator.clipboard.readText()).toBe("# brief"));
+      expect(downloadTextFile).not.toHaveBeenCalled();
+    });
+
+    it("shows an error toast when the export fails", async () => {
+      exportBrief.mockImplementationOnce(async () => {
+        throw new Error("render exploded");
+      });
+      const user = userEvent.setup();
+      renderResearch();
+
+      await user.click(await screen.findByRole("button", { name: "Export brief for solid-state-batteries" }));
+      await user.click(await screen.findByRole("menuitem", { name: "PDF (.pdf)" }));
+      await waitFor(() => expect(toastError).toHaveBeenCalledWith(expect.stringContaining("render exploded"), { duration: 4000 }));
+      expect(downloadBase64File).not.toHaveBeenCalled();
+    });
+
+    it("shows tags on topics and a source-count badge on item rows", async () => {
+      const user = userEvent.setup();
+      renderResearch();
+
+      const tags = await screen.findByLabelText("Tags of solid-state-batteries");
+      expect(within(tags).getByText("acme")).toBeInTheDocument();
+      await user.click(screen.getByText("solid-state-batteries"));
+      expect(await screen.findByRole("img", { name: "2 sources" })).toBeInTheDocument();
+      expect(screen.queryByRole("img", { name: /0 sources/ })).not.toBeInTheDocument();
+    });
+
+    it("edits a topic's tags through the tag editor", async () => {
+      const user = userEvent.setup();
+      renderResearch();
+
+      await user.click(await screen.findByRole("button", { name: "Set tags for solid-state-batteries" }));
+      const dialog = screen.getByRole("dialog");
+      const input = within(dialog).getByPlaceholderText("acme, due-diligence");
+      expect(input).toHaveValue("acme, q4");
+      await user.clear(input);
+      await user.type(input, "ACME, Board Pack");
+      await user.click(within(dialog).getByRole("button", { name: "Save tags" }));
+
+      await waitFor(() => expect(setTopicTags).toHaveBeenCalledWith({ name: "solid-state-batteries", tags: ["acme", "board pack"] }));
+    });
+
+    it("filters topics by tag chips and matches tags in the search box", async () => {
+      const user = userEvent.setup();
+      renderResearch();
+
+      const filter = await screen.findByRole("group", { name: "Filter by tag" });
+      expect(screen.getByText("local-ai-tools")).toBeInTheDocument();
+      await user.click(within(filter).getByRole("button", { name: "q4" }));
+      expect(screen.queryByText("local-ai-tools")).not.toBeInTheDocument();
+      expect(screen.getByText("solid-state-batteries")).toBeInTheDocument();
+      await user.click(within(filter).getByRole("button", { name: "q4" }));
+      expect(screen.getByText("local-ai-tools")).toBeInTheDocument();
+
+      await user.type(screen.getByLabelText("Search research"), "acme");
+      const matches = await screen.findByRole("group", { name: "Matching topics" });
+      expect(within(matches).getByText("solid-state-batteries")).toBeInTheDocument();
+      expect(within(matches).queryByText("local-ai-tools")).not.toBeInTheDocument();
+    });
+
     it("shows the attached research agent's todos in the navigator and the landing tab", async () => {
       const user = userEvent.setup();
       todosState = { status: "success", todos: [{ id: "t1", content: "Survey vendors", status: "in_progress" }] };
@@ -408,7 +563,7 @@ describe("Research app", () => {
       await user.type(await screen.findByLabelText("Research query"), "Solid-state battery timeline");
       await user.click(screen.getByRole("button", { name: "Start research agent" }));
 
-      await waitFor(() => expect(createAgent).toHaveBeenCalledWith({ agentType: "research", headless: false }));
+      await waitFor(() => expect(createAgent).toHaveBeenCalledWith({ agentType: "research" }));
       expect(sendInput).toHaveBeenCalledWith({
         agentId: "research-agent-1",
         input: { from: "Research app", message: "/deep research Solid-state battery timeline" },
@@ -435,7 +590,7 @@ describe("Research app", () => {
       renderResearch(itemPath);
 
       expect(await screen.findByText("Solid-state batteries are promising.")).toBeInTheDocument();
-      await user.click(screen.getByRole("button", { name: /Edit/i }));
+      await user.click(screen.getByRole("button", { name: "Edit" }));
       const editor = await screen.findByLabelText("Markdown editor");
       await user.clear(editor);
       await user.type(editor, "# Updated summary");
@@ -450,11 +605,37 @@ describe("Research app", () => {
       await waitFor(() => expect(hasUnsavedBadge()).toBe(false));
     });
 
+    it("keeps what you type while a save is in flight", async () => {
+      const user = userEvent.setup();
+      renderResearch(itemPath);
+
+      expect(await screen.findByText("Solid-state batteries are promising.")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Edit" }));
+      const editor = await screen.findByLabelText("Markdown editor");
+      await user.clear(editor);
+      await user.type(editor, "first");
+
+      let finish = () => {};
+      updateItem.mockImplementationOnce(
+        args =>
+          new Promise(resolve => {
+            finish = () => resolve({ item: { ...args, size: args.content.length, updatedAt: "2026-07-02T00:00:00.000Z", sourceCount: 0, sources: [] } });
+          }),
+      );
+      await user.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() => expect(updateItem).toHaveBeenCalledWith({ topicName: "solid-state-batteries", name: "summary", content: "first" }));
+      await user.type(editor, " and more");
+      finish();
+
+      await waitFor(() => expect((screen.getByLabelText("Markdown editor") as HTMLTextAreaElement).value).toBe("first and more"));
+      expect(hasUnsavedBadge()).toBe(true);
+    });
+
     it("keeps an unsaved draft when the app is closed and reopened", async () => {
       const user = userEvent.setup();
       const first = renderResearch(itemPath);
       await first.findByText("Solid-state batteries are promising.");
-      await user.click(first.getByRole("button", { name: /Edit/i }));
+      await user.click(first.getByRole("button", { name: "Edit" }));
       const editor = await first.findByLabelText("Markdown editor");
       await user.clear(editor);
       await user.type(editor, "# Unsaved draft");
@@ -469,7 +650,7 @@ describe("Research app", () => {
       renderResearch(itemPath);
 
       await screen.findByText("Solid-state batteries are promising.");
-      await user.click(screen.getByRole("button", { name: /Edit/i }));
+      await user.click(screen.getByRole("button", { name: "Edit" }));
       const editor = await screen.findByLabelText("Markdown editor");
       await user.clear(editor);
       await user.type(editor, "shortcut save");
@@ -597,7 +778,7 @@ describe("Research app", () => {
       renderResearch(itemPath);
 
       await screen.findByText("Solid-state batteries are promising.");
-      await user.click(screen.getByRole("button", { name: /Edit/i }));
+      await user.click(screen.getByRole("button", { name: "Edit" }));
       const editor = await screen.findByLabelText("Markdown editor");
       await user.type(editor, " more");
       await user.click(screen.getByRole("button", { name: "Save" }));
@@ -605,6 +786,166 @@ describe("Research app", () => {
       await waitFor(() => expect(updateItem).toHaveBeenCalled());
       expect(getItemDraft("solid-state-batteries/summary")).toContain(" more");
       expect(hasUnsavedBadge()).toBe(true);
+    });
+
+    it("lists the item's sources separately, with safe external links", async () => {
+      renderResearch(itemPath);
+
+      const sources = await screen.findByRole("region", { name: "Sources" });
+      expect(within(sources).getByText("Sources (2)")).toBeInTheDocument();
+      const link = within(sources).getByRole("link", { name: /Annual report/ });
+      expect(link).toHaveAttribute("href", "https://acme.example/report");
+      expect(link).toHaveAttribute("target", "_blank");
+      expect(link).toHaveAttribute("rel", "noopener noreferrer");
+      expect(within(sources).getByText("ACME Corp · accessed 2026-11-01")).toBeInTheDocument();
+      // Without a title the host stands in.
+      expect(within(sources).getByRole("link", { name: /news\.example/ })).toBeInTheDocument();
+    });
+
+    it("shows no sources section for an item without sources, and a warning for bad frontmatter", async () => {
+      getItemResult = { ...summaryItem, sources: [], sourceCount: 0, warning: "Frontmatter could not be parsed; showing the raw text." };
+      renderResearch(itemPath);
+
+      expect(await screen.findByTestId("research-item-warning")).toHaveTextContent("showing the raw text");
+      // An empty list still offers the editor's entry point.
+      expect(within(screen.getByRole("region", { name: "Sources" })).getByText("No sources yet.")).toBeInTheDocument();
+    });
+
+    it("keeps sources when saving: saving in the editor does not send them (the server keeps them)", async () => {
+      const user = userEvent.setup();
+      renderResearch(itemPath);
+      await screen.findByText("Solid-state batteries are promising.");
+      await user.click(screen.getByRole("button", { name: "Edit" }));
+      await user.type(await screen.findByLabelText("Markdown editor"), " more");
+      await user.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => expect(updateItem).toHaveBeenCalled());
+      expect(updateItem.mock.calls[0]?.[0]).not.toHaveProperty("sources");
+    });
+
+    describe("source editor", () => {
+      const TODAY = new Date().toISOString().slice(0, 10);
+      // A region while previewing, a collapsible <details> under the editor.
+      const sourcesRegion = () => (document.querySelector('[aria-label="Sources"]') ?? screen.getByRole("region", { name: "Sources" })) as HTMLElement;
+      const openItem = async () => {
+        const user = userEvent.setup();
+        renderResearch(itemPath);
+        await screen.findByText("Solid-state batteries are promising.");
+        return user;
+      };
+      const lastUpdate = () => updateItem.mock.calls.at(-1)?.[0];
+
+      it("adds a source with today's date, saving the full list and the saved body byte for byte", async () => {
+        const rawBody = "# Summary\n\n  Odd   spacing  \n\n\n";
+        getItemResult = { ...summaryItem, content: rawBody };
+        const user = userEvent.setup();
+        renderResearch(itemPath);
+        await screen.findByText("Summary");
+
+        await user.click(within(sourcesRegion()).getByRole("button", { name: "Add source" }));
+        expect(screen.getByLabelText("Accessed")).toHaveValue(TODAY);
+        await user.type(screen.getByLabelText(/URL/), "https://new.example/page");
+        await user.type(screen.getByLabelText("Title"), "New page");
+        await user.type(screen.getByLabelText("Publisher"), "New Co");
+        await user.click(screen.getByRole("button", { name: "Add source" }));
+
+        await waitFor(() => expect(updateItem).toHaveBeenCalledTimes(1));
+        expect(lastUpdate()).toEqual({
+          topicName: "solid-state-batteries",
+          name: "summary",
+          content: rawBody,
+          sources: [...summaryItem.sources, { url: "https://new.example/page", title: "New page", publisher: "New Co", accessed: TODAY }],
+          baseSources: summaryItem.sources, // what the editor started from, so a concurrent change is refused
+        });
+        expect(await within(sourcesRegion()).findByText("Sources (3)")).toBeInTheDocument();
+      });
+
+      it("rejects an empty, non-http or duplicate URL inline without calling the server", async () => {
+        const user = await openItem();
+        await user.click(within(sourcesRegion()).getByRole("button", { name: "Add source" }));
+        const submit = () => user.click(screen.getByRole("button", { name: "Add source" }));
+
+        await submit();
+        expect(await screen.findByText("Enter the URL of the source.")).toBeInTheDocument();
+
+        await user.type(screen.getByLabelText(/URL/), "ftp://files.example/x");
+        await submit();
+        expect(await screen.findByText("Use a full http:// or https:// URL.")).toBeInTheDocument();
+
+        await user.clear(screen.getByLabelText(/URL/));
+        await user.type(screen.getByLabelText(/URL/), "https://acme.example/report");
+        await submit();
+        expect(await screen.findByText("This URL is already listed.")).toBeInTheDocument();
+        expect(updateItem).not.toHaveBeenCalled();
+      });
+
+      it("edits one source and leaves the others as they were", async () => {
+        const user = await openItem();
+        await user.click(within(sourcesRegion()).getByRole("button", { name: "Edit source 1" }));
+        const title = screen.getByLabelText("Title");
+        expect(title).toHaveValue("Annual report");
+        await user.clear(title);
+        await user.type(title, "Annual report 2026");
+        await user.click(screen.getByRole("button", { name: "Save source" }));
+
+        await waitFor(() => expect(updateItem).toHaveBeenCalledTimes(1));
+        expect(lastUpdate()?.sources).toEqual([{ ...summaryItem.sources[0]!, title: "Annual report 2026" }, ...summaryItem.sources.slice(1)]);
+        expect(lastUpdate()?.content).toBe(summaryItem.content);
+        expect(await within(sourcesRegion()).findByRole("link", { name: /Annual report 2026/ })).toBeInTheDocument();
+      });
+
+      it("removes a source and offers Undo, which writes the previous list back", async () => {
+        const user = await openItem();
+        await user.click(within(sourcesRegion()).getByRole("button", { name: "Remove source 2" }));
+
+        await waitFor(() => expect(updateItem).toHaveBeenCalledTimes(1));
+        expect(lastUpdate()?.sources).toEqual(summaryItem.sources.slice(0, 1));
+        expect(await within(sourcesRegion()).findByText("Sources (1)")).toBeInTheDocument();
+
+        await user.click(within(sourcesRegion()).getByRole("button", { name: "Undo" }));
+        await waitFor(() => expect(updateItem).toHaveBeenCalledTimes(2));
+        expect(lastUpdate()?.sources).toEqual(summaryItem.sources);
+        expect(await within(sourcesRegion()).findByText("Sources (2)")).toBeInTheDocument();
+      });
+
+      it("writes an empty list when the last source is removed", async () => {
+        getItemResult = { ...summaryItem, sources: [summaryItem.sources[0]!], sourceCount: 1 };
+        const user = await openItem();
+        await user.click(within(sourcesRegion()).getByRole("button", { name: "Remove source 1" }));
+
+        await waitFor(() => expect(updateItem).toHaveBeenCalledTimes(1));
+        expect(lastUpdate()).toMatchObject({ content: summaryItem.content, sources: [] });
+        expect(await within(sourcesRegion()).findByText("No sources yet.")).toBeInTheDocument();
+      });
+
+      it("keeps unsaved text edits as a draft and says so when sources are saved", async () => {
+        const user = await openItem();
+        await user.click(screen.getByRole("button", { name: "Edit" }));
+        await user.type(await screen.findByLabelText("Markdown editor"), " DRAFT");
+
+        await user.click(within(sourcesRegion()).getByText(/^Sources \(2\)/));
+        await user.click(within(sourcesRegion()).getByRole("button", { name: "Remove source 1" }));
+
+        await waitFor(() => expect(updateItem).toHaveBeenCalledTimes(1));
+        // The draft never reaches disk: the body sent is the saved text.
+        expect(lastUpdate()?.content).toBe(summaryItem.content);
+        await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith("Sources saved. Your unsaved text edits were kept as a draft.", { duration: 4000 }));
+        expect(screen.getByLabelText("Markdown editor")).toHaveValue(`${summaryItem.content} DRAFT`);
+        expect(getItemDraft("solid-state-batteries/summary")).toBe(`${summaryItem.content} DRAFT`);
+      });
+
+      it("shows a failed save inside the editor and keeps the form open", async () => {
+        updateItem.mockImplementationOnce(async () => {
+          throw new Error("disk full");
+        });
+        const user = await openItem();
+        await user.click(within(sourcesRegion()).getByRole("button", { name: "Add source" }));
+        await user.type(screen.getByLabelText(/URL/), "https://new.example/page");
+        await user.click(screen.getByRole("button", { name: "Add source" }));
+
+        expect(await screen.findByText(/disk full/)).toBeInTheDocument();
+        expect(screen.getByLabelText(/URL/)).toHaveValue("https://new.example/page");
+      });
     });
 
     it("deletes the dossier after confirmation and closes the tab", async () => {
